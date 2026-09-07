@@ -26,6 +26,7 @@ import { createSessionIde } from "./ide";
 import { createSessionNotifications } from "./notifications";
 import { createSessionAudio, type RetainedSoundManager } from "./audio";
 import { createSessionCombat } from "./combat";
+import { createSessionDps } from "./dps";
 import { createSessionTutorial } from "./tutorial";
 import { createSessionVisualEffects } from "./visual-effects";
 import { createSessionGmcpDiagnostics } from "./gmcp-diagnostics";
@@ -211,6 +212,7 @@ export function createSessionFromState(
   const information = createSessionInformation(gmcp, scope, eventBus);
   const interactions = createSessionInteractions(gmcp, scope, eventBus, transport);
   const combat = createSessionCombat(gmcp, scope, eventBus, information);
+  const dps = createSessionDps(gmcp, scope, eventBus);
   const tutorial = createSessionTutorial(gmcp, scope, eventBus);
   const visualEffects = createSessionVisualEffects(gmcp, scope, eventBus, {
     ...(deps.now !== undefined ? { now: deps.now } : {}),
@@ -285,6 +287,7 @@ export function createSessionFromState(
     notifications,
     audio,
     combat,
+    dps,
     tutorial,
     visualEffects,
     gmcpDiagnostics,

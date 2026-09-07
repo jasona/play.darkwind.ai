@@ -42,6 +42,7 @@ for structured data (panels, mapping, IDE, server-driven windows).
 - `map-renderer.js` -- CSS Grid tile map renderer (32x32 terrain tiles)
 - `window-manager.js` -- Server-driven GUI window rendering (Darkwind.Window)
 - `ide-manager.js` / `ide-editor.js` -- In-browser code editor (Darkwind.IDE)
+- `dps-meter-core.mjs` / `dps-panel-renderer.mjs` -- DPS Meter reducers, view selector, and HTML renderer; the session-owned meter lives in `client/runtime/dps.ts` and the panel in `client/workspace/DpsPanel.svelte` (see `docs/dps-meter.md`)
 - `combat-stage-renderer.mjs` -- Canvas combat stage behind the Combat panel's renderer contract; falls back to `combat-visual-renderer.mjs` without a 2D canvas
 - `combat-stage.mjs` / `combat-stage-core.mjs` -- Canvas combat stage (tokens, backdrop, per-event effects); core is pure and unit-tested
 - `combat-rig-core.mjs` -- Procedural fighter rig for the stage: figure resolution (equipment or guild weapon, race scale, NPC beast), poses, and joint geometry; pure and unit-tested

@@ -19,6 +19,7 @@
   import InformationPanel from "./InformationPanel.svelte";
   import ConnectionHealthPanel from "./ConnectionHealthPanel.svelte";
   import CombatPanel from "./CombatPanel.svelte";
+  import DpsPanel from "./DpsPanel.svelte";
   import FishingPanel from "./FishingPanel.svelte";
   import IdePanel from "./IdePanel.svelte";
   import MapPanel from "./MapPanel.svelte";
@@ -151,11 +152,18 @@
     title: "GMCP Debug",
     state: {},
   };
+  const dpsPanel: WorkspacePanelSpec = {
+    id: "dps",
+    kind: "dps",
+    title: "DPS Meter",
+    state: {},
+    minSize: { width: 200, height: 120 },
+  };
 
   type PanelMenuGroupName = "Character" | "Progress" | "Social" | "System" | "World";
   type PanelMenuItem = {
     group: PanelMenuGroupName;
-    kind: "information" | "world" | "chat" | "gmcp-debug";
+    kind: "information" | "world" | "chat" | "dps" | "gmcp-debug";
     panel: WorkspacePanelSpec;
   };
   const informationPanelGroups: Record<InformationPanelId, PanelMenuGroupName> = {
@@ -185,6 +193,7 @@
     })),
     ...worldPanels.map((panel): PanelMenuItem => ({ group: "World", kind: "world", panel })),
     { group: "Social", kind: "chat", panel: chatPanel },
+    { group: "Character", kind: "dps", panel: dpsPanel },
     ...(debugGmcp
       ? [{ group: "System" as const, kind: "gmcp-debug" as const, panel: gmcpDebugPanel }]
       : []),
@@ -424,6 +433,7 @@
   let sheetTrigger: HTMLButtonElement | undefined;
   let combatPanelOpen = $state(false);
   let chatPanelOpen = $state(false);
+  let dpsPanelOpen = $state(false);
   let gmcpDebugOpen = $state(false);
   let launcherOpen = $state(false);
   let mobilePresentation = $state(false);
@@ -462,6 +472,7 @@
     openWorldPanelIds = visibleWorldPanels.map((panel) => panel.id);
     session.world.setVisiblePanels(visibleWorldPanels.map((panel) => panel.id));
     chatPanelOpen = workspace?.hasPanel(chatPanel.id) ?? false;
+    dpsPanelOpen = workspace?.hasPanel(dpsPanel.id) ?? false;
   }
 
   function informationPanelOpen(panel: WorkspacePanelSpec): boolean {
@@ -527,6 +538,31 @@
     syncVisiblePanels();
   }
 
+  async function toggleDpsPanel(activate = true): Promise<void> {
+    if (!workspace) return;
+    if (workspace.hasPanel(dpsPanel.id)) await workspace.removePanel(dpsPanel.id);
+    else {
+      const width = Math.min(340, Math.max(240, host.clientWidth - 16));
+      const height = Math.min(520, Math.max(200, host.clientHeight - 16));
+      workspace.addOrUpdatePanel({
+        ...dpsPanel,
+        placement: railsEnabled
+          ? {
+              kind: "floating",
+              bounds: {
+                left: Math.max(0, host.clientWidth - width - 8),
+                top: Math.max(0, host.clientHeight - height - 8),
+                width,
+                height,
+              },
+            }
+          : { kind: "grid", direction: "right", referencePanelId: terminal.id },
+      });
+      if (activate) workspace.activatePanel(dpsPanel.id);
+    }
+    syncVisiblePanels();
+  }
+
   async function toggleGmcpDebugPanel(activate = true): Promise<void> {
     if (!workspace || (!debugGmcp && !workspace.hasPanel(gmcpDebugPanel.id))) return;
     if (workspace.hasPanel(gmcpDebugPanel.id)) await workspace.removePanel(gmcpDebugPanel.id);
@@ -556,6 +592,7 @@
     if (item.kind === "information") return informationPanelOpen(item.panel);
     if (item.kind === "world") return worldPanelOpen(item.panel);
     if (item.kind === "gmcp-debug") return gmcpDebugOpen;
+    if (item.kind === "dps") return dpsPanelOpen;
     return chatPanelOpen;
   }
 
@@ -563,6 +600,7 @@
     if (item.kind === "information") void toggleInformationPanel(item.panel, false);
     else if (item.kind === "world") void toggleWorldPanel(item.panel, false);
     else if (item.kind === "gmcp-debug") void toggleGmcpDebugPanel(false);
+    else if (item.kind === "dps") void toggleDpsPanel(false);
     else void toggleChatPanel(false);
   }
 
@@ -776,6 +814,13 @@
         floatable: true,
         session,
       },
+      dps: {
+        canClose: () => true,
+        collapsible: true,
+        component: DpsPanel,
+        floatable: true,
+        session,
+      },
       ...Object.fromEntries(
         informationPanels.map((panel) => [
           panel.kind,
@@ -982,7 +1027,7 @@
      * rail membership is whatever `fillRailsWithDefaults` rebuilds.
      */
     const restoreSnapshot = (next: PersistedWorkspaceSnapshot): boolean => {
-      const panels = [terminal, ...informationPanels, ...worldPanels, chatPanel];
+      const panels = [terminal, ...informationPanels, ...worldPanels, chatPanel, dpsPanel];
       if (next.version === 1) {
         if (!currentWorkspace.restore(next, panels)) return false;
         migrateVersionOneRailPanels(currentWorkspace);
@@ -1682,6 +1727,13 @@
         onclick={() => selectPanel(() => void toggleChatPanel())}
       >
         {chatPanelOpen ? "Close Chat" : "Open Chat"}
+      </button>
+      <button
+        type="button"
+        aria-pressed={dpsPanelOpen}
+        onclick={() => selectPanel(() => void toggleDpsPanel())}
+      >
+        {dpsPanelOpen ? "Close DPS Meter" : "Open DPS Meter"}
       </button>
       {#if combatPanelOpen}
         <button
