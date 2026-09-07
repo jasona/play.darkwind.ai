@@ -42,6 +42,13 @@ for structured data (panels, mapping, IDE, server-driven windows).
 - `map-renderer.js` -- CSS Grid tile map renderer (32x32 terrain tiles)
 - `window-manager.js` -- Server-driven GUI window rendering (Darkwind.Window)
 - `ide-manager.js` / `ide-editor.js` -- In-browser code editor (Darkwind.IDE)
+- `combat-stage-renderer.mjs` -- Canvas combat stage behind the Combat panel's renderer contract; falls back to `combat-visual-renderer.mjs` without a 2D canvas
+- `combat-stage.mjs` / `combat-stage-core.mjs` -- Canvas combat stage (tokens, backdrop, per-event effects); core is pure and unit-tested
+- `combat-rig-core.mjs` -- Procedural fighter rig for the stage: figure resolution (equipment or guild weapon, race scale, NPC beast), poses, and joint geometry; pure and unit-tested
+- `combat-equipment-core.mjs` -- Equipment profile from Char.Items (hands, shield, helmet, armor) with a keyword weapon classifier; pure and unit-tested
+- `combat-sprites.mjs` / `combat-sprite-bake.mjs` -- Sprite sheet manifest, loader (character, then gender-race, then gender-family such as male-human, then kind), and placement for the stage figures (see `docs/combat-sprites.md`); bake tool renders a sheet from the rig or a registered style
+- `combat-sprite-art.mjs` -- Hand-authored vector bodies drawn over rig geometry for specific sheets (e.g. `male-scro`); used only while baking
+- `scripts/sprite-sheet-split.py` / `scripts/sprite-sheet-assemble.py` / `scripts/comfyui-sprite-cell.json` -- Sprite paint-over pipeline: split a generated sheet into per-pose frames, assemble painted frames and scale the manifest; ComfyUI single-cell ControlNet graph
 
 ## GMCP Extensions
 

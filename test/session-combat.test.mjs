@@ -95,6 +95,34 @@ function event(seq, overrides = {}) {
   };
 }
 
+test("combat snapshots carry the recipient's Char.Status and inventory for the stage", async (t) => {
+  const modules = await loadModules(t);
+  const harness = createHarness(modules);
+  t.after(() => harness.scope.dispose());
+
+  harness.reconnect("connected");
+  harness.gmcp.dispatch("Char.Status", { name: "Acer", race: "Scro", class: "Berserker", gender: "Male" });
+  harness.gmcp.dispatch("Char.Items.List", {
+    location: "inv",
+    items: [{ id: "r1", name: "a slender rapier (main weapon)", attrib: "l" }],
+  });
+  harness.gmcp.dispatch("Darkwind.Combat.State", state());
+
+  const snapshot = harness.combat.getSnapshot();
+  assert.equal(snapshot.status?.race, "Scro");
+  assert.equal(snapshot.status?.gender, "Male");
+  assert.equal(snapshot.inventory.length, 1);
+  assert.equal(snapshot.inventory[0].id, "r1");
+  assert.equal(Object.isFrozen(snapshot.inventory), true);
+
+  harness.gmcp.dispatch("Char.Items.List", { location: "room", items: [{ id: "x" }] });
+  assert.equal(harness.combat.getSnapshot().inventory.length, 1, "only the inventory location counts");
+
+  harness.reconnect("disconnected");
+  assert.equal(harness.combat.getSnapshot().status, null, "a dropped connection clears the descriptor inputs");
+  assert.equal(harness.combat.getSnapshot().inventory.length, 0);
+});
+
 function framesFor(sent, packageName) {
   return sent.filter((frame) => frame === packageName || frame.startsWith(packageName + " "));
 }

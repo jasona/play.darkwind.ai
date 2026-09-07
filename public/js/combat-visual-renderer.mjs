@@ -2,7 +2,7 @@ import { buildCombatView } from "./combat-visual-core.mjs";
 import { escHtml, formatInt } from "./core-information-panel-renderers.mjs";
 import { NPC_FALLBACK_IMAGE, PLAYER_FALLBACK_IMAGE } from "./image-fallbacks.js";
 
-const RESULT_LABELS = {
+export const RESULT_LABELS = {
   hit: "Hit",
   critical: "Critical",
   miss: "Miss",
@@ -34,7 +34,7 @@ const PERSPECTIVE_LABELS = {
   },
 };
 
-function healthHtml(side, name, health) {
+export function healthHtml(side, name, health) {
   const safeName = escHtml(name || (side === "player" ? "You" : "Target"));
   if (!health || !health.known) {
     const unknownLabel =
@@ -130,7 +130,7 @@ function artHtml(side, combatant, loadedImages, failedImages, event, impactSide)
   return html + "</div>";
 }
 
-function eventLabel(event) {
+export function eventLabel(event) {
   if (!event) return "Awaiting the next exchange";
   const perspectiveLabels = PERSPECTIVE_LABELS[event.perspective];
   let label =
@@ -166,6 +166,8 @@ export function createCombatVisualRenderer(bodyEl) {
       enemy: data.enemy,
       vitals: data.vitals,
       avatar: data.avatar,
+      status: data.status,
+      inventory: data.inventory,
     });
     const event = view.event;
     const resultClass = event ? " combat-result-" + event.result : "";

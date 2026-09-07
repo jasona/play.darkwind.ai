@@ -4,10 +4,10 @@
   import type { SessionCombatSnapshot } from "../runtime/combat.ts";
   import type { Session } from "../runtime/session.ts";
   import type { PanelState } from "./workspace.ts";
-  // @ts-expect-error Retained Combat DOM renderer has no declaration file.
-  import * as combatRenderer from "../../public/js/combat-visual-renderer.mjs";
+  // @ts-expect-error The canvas combat stage is retained JavaScript without a declaration file.
+  import * as combatRenderer from "../../public/js/combat-stage-renderer.mjs";
 
-  const { createCombatVisualRenderer } = combatRenderer;
+  const { createCombatStageRenderer } = combatRenderer;
 
   let {
     panelId,
@@ -22,7 +22,7 @@
   let body: HTMLElement;
 
   onMount(() => {
-    const renderer = createCombatVisualRenderer(body);
+    const renderer = createCombatStageRenderer(body);
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const syncReducedMotion = (): void => {
       activeSession.combat.setReducedMotion(motionQuery.matches);
@@ -47,7 +47,9 @@
       );
     };
 
+    let lastSnapshot: SessionCombatSnapshot | null = null;
     const render = (snapshot: SessionCombatSnapshot): void => {
+      lastSnapshot = snapshot;
       shouldPresent = snapshot.shouldPresent;
       try {
         renderSucceeded =
@@ -56,6 +58,10 @@
             enemy: snapshot.enemy,
             vitals: snapshot.vitals,
             avatar: snapshot.avatar,
+            status: snapshot.status,
+            inventory: snapshot.inventory,
+            // The stage paints a terrain backdrop from the current room.
+            room: activeSession.world.getSnapshot().room,
           }) !== false;
         syncReadiness();
       } catch (error) {
@@ -71,8 +77,15 @@
     const sizeObserver = new ResizeObserver(syncReadiness);
     sizeObserver.observe(root);
     const unsubscribe = activeSession.combat.subscribe(render);
+    let lastRoomGeneration = activeSession.world.getSnapshot().roomGeneration;
+    const unsubscribeWorld = activeSession.world.subscribe((world) => {
+      if (world.roomGeneration === lastRoomGeneration) return;
+      lastRoomGeneration = world.roomGeneration;
+      if (lastSnapshot) render(lastSnapshot);
+    });
     return () => {
       unsubscribe();
+      unsubscribeWorld();
       sizeObserver.disconnect();
       motionQuery.removeEventListener("change", syncReducedMotion);
       window.removeEventListener("darkflow:workspace-layout-changed", syncReadiness);

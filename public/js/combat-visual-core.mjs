@@ -1,3 +1,6 @@
+import { bundledPortraitFor } from './image-fallbacks.js';
+import { equipmentProfile } from './combat-equipment-core.mjs';
+
 import { isNpcEnemy } from './image-fallbacks.js';
 
 const VALID_RESULTS = new Set(['hit', 'critical', 'miss', 'dodge', 'absorb']);
@@ -301,6 +304,29 @@ function unavailableHealthSnapshot(status = 'synchronizing') {
   };
 }
 
+function emptyDescriptor() {
+  return { race: '', guild: '', gender: '', descriptor: '', fallbackImage: '' };
+}
+
+// Race, guild, and gender from the sticky Char.Status snapshot, plus the
+// bundled portrait that pair maps to. The descriptor is display text for
+// the token; the fallback image is used only while no avatar URL exists.
+export function playerDescriptor(status) {
+  const source = status && typeof status === 'object' ? status : {};
+  const race = safeText(source.race, 60);
+  const guild = safeText(source.class || source.guild, 60);
+  const gender = safeText(source.gender, 24);
+  const identity = [gender, race].filter(Boolean).join(' ');
+  const descriptor = [identity, guild].filter(Boolean).join(' \u00b7 ');
+  return {
+    race,
+    guild,
+    gender,
+    descriptor,
+    fallbackImage: bundledPortraitFor(race, gender),
+  };
+}
+
 function activeEnemyName(enemy) {
   const name = safeText(enemy && enemy.enemy_name, 120);
   return name && name !== 'None' ? name : '';
@@ -313,6 +339,8 @@ export function buildCombatView(current, sources = {}) {
   const enemy = sources.enemy && typeof sources.enemy === 'object' ? sources.enemy : {};
   const vitals = sources.vitals && typeof sources.vitals === 'object' ? sources.vitals : {};
   const avatar = sources.avatar && typeof sources.avatar === 'object' ? sources.avatar : {};
+  const status = sources.status && typeof sources.status === 'object' ? sources.status : {};
+  const inventory = Array.isArray(sources.inventory) ? sources.inventory : null;
   const enemyName = activeEnemyName(enemy);
   const selfId = selfActor ? selfActor.id : 'self';
   const latestEvent = model.currentEvent
@@ -377,6 +405,12 @@ export function buildCombatView(current, sources = {}) {
       health: observerView
         ? unavailableHealthSnapshot('unavailable')
         : healthSnapshot(vitals.hp, vitals.maxhp),
+      // Char.Status describes the recipient only. An observed fight never
+      // borrows it for somebody else's token.
+      ...(observerView ? emptyDescriptor() : playerDescriptor(status)),
+      // Wielded and worn items from Char.Items, recipient-only for the
+      // same reason as the descriptor above.
+      equipment: observerView ? null : equipmentProfile(inventory),
     },
     target: {
       id: targetId,

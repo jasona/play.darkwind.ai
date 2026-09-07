@@ -92,7 +92,10 @@ instead of presenting every group swing as a new encounter.
 When `current_actor_id` is `self`, `Char.Vitals` remains authoritative for
 player HP, `Char.Enemy` remains authoritative for the current target's HP,
 condition, and art, and `Darkwind.Char.Avatar` remains authoritative for
-player art. A passive observer must not reuse those recipient-private
+player art. The sticky `Char.Status` snapshot supplies the recipient's race,
+class, and gender as descriptor text under the player token, and maps that
+race and gender pair to the bundled portrait used only while no avatar URL
+is available or the generated portrait fails to load. A passive observer must not reuse those recipient-private
 snapshots for somebody else's fight: actor names come from the State roster,
 while health and art remain unavailable or use non-private placeholders.
 Additional actor entries are compact context or threat indicators, not a
@@ -173,3 +176,52 @@ Both health bars expose progressbar semantics. Server-provided summaries feed
 a rate-limited polite live region. Reduced-motion mode removes lunges, shakes,
 flashes, moving damage numbers, and crossfades while preserving static outcome
 badges and summaries.
+
+## Canvas Stage
+
+When the browser provides a 2D canvas, the Combat pane draws its stage on a
+canvas: a backdrop chosen from the room's canonical terrain tile, two
+procedural fighter figures whose heads are the player and target portraits,
+and per-event effects (lunge,
+slash arcs and burst for `hit`/`critical`, a whiff arc for `miss`, a sidestep
+with afterimage for `dodge`, and a shield bubble for `absorb`). Damage numbers
+and result badges are drawn on the canvas; names, health bars, condition text,
+the current exchange, threats, history, and the live region stay in the DOM so
+the accessibility contract above is unchanged.
+
+The figures are drawn from a pose rig rather than image assets. The player's
+wielded and worn items from `Char.Items` shape the figure: the main-hand
+item's name picks the weapon (blade, knife, axe, blunt, polearm, staff, bow,
+or bare hands when nothing is wielded), an off-hand item is drawn in the
+left hand, a shield rides the left forearm, head armor draws a helmet, and
+body armor thickens the torso. Weapon kind is a keyword heuristic over the
+item name because the protocol carries no weapon type; an unrecognized name,
+or no inventory yet, falls back to the guild's weapon. Race scales the body,
+and NPC targets use a hunched beast form. Each event blends the actor
+through windup and strike poses and the victim through recoil, dodge, or guard
+poses; bows and staves add a projectile between the figures. Pose names are
+the seam for future sprite sheets.
+
+Bodies are shaded shapes rather than strokes: tapered limbs with an outline
+and a shade band, a torso that is wider at the shoulders than the hips, boots,
+hands, a belt, a cloak on humanoids and a tail on beasts that lag the body by
+a spring. Legs are solved by inverse kinematics toward planted feet, so a
+lunge moves the body while the rear foot stays put. Strikes anticipate, snap,
+and hold; a landed blow freezes both figures for a beat (hit-stop), squashes
+the victim, stretches the striker, draws a smear behind a melee swing, and
+kicks dust at the victim's feet. Reduced motion removes all of it and leaves
+the figures at rest.
+
+When a sprite sheet is shipped for a figure kind (see
+[combat-sprites.md](combat-sprites.md)), it replaces the procedural body
+while weapons, shield, helmet, cloak, and the portrait head keep drawing on
+top. A missing or invalid sheet falls back to the rig.
+
+The stage plays each accepted event once, keyed by `seq` within the epoch and
+encounter, and ignores repeated publishes of the same beat. Portraits come from
+`Darkwind.Char.Avatar` and `Char.Enemy`; a failed image falls back to the
+bundled player or NPC placeholder. The frame loop stops when the pane is
+hidden, the tab is not visible, the encounter ends and no effect is still
+playing, or the canvas leaves the document. Without canvas support the pane
+renders the DOM card stage instead; readiness reporting is identical in both
+modes.

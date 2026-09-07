@@ -31,3 +31,36 @@ export function applyNpcImageFallback(img) {
   img.src = NPC_FALLBACK_IMAGE;
   return true;
 }
+
+// Portraits shipped in public/assets/avatars, one per gender and race. The
+// server usually picks one of these itself through Darkwind.Char.Avatar; the
+// client resolves the same file from Char.Status so the combat token has a
+// face before that message arrives or when a generated portrait fails.
+export const BUNDLED_PORTRAIT_GENDERS = Object.freeze(['female', 'male']);
+export const BUNDLED_PORTRAIT_RACES = Object.freeze([
+  'arctic-elf', 'barbarian', 'crannian-gnome', 'darkwinder', 'desert-dwarf',
+  'desert-nomad', 'dragon', 'faerie', 'glavian', 'gypsy', 'halfling',
+  'high-elf', 'hyperborean-gnome', 'ice-gnoll', 'ice-ogre', 'kender',
+  'northman', 'pixie', 'rift-duergar', 'scro', 'shel-zaranite', 'sidhe',
+  'silver-elf', 'souvraeli', 'stone-dwarf', 'swamp-troll', 'sylph',
+  'thraxian', 'uruk', 'wayfarian', 'yugoloth',
+]);
+const BUNDLED_RACE_SET = new Set(BUNDLED_PORTRAIT_RACES);
+
+export function portraitSlug(value) {
+  return String(value === undefined || value === null ? '' : value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+// Returns the bundled portrait path for a race and gender pair, or '' when
+// the pair has no shipped file. Only known slugs become URLs, so server text
+// never reaches a path.
+export function bundledPortraitFor(race, gender) {
+  const genderSlug = portraitSlug(gender);
+  const raceSlug = portraitSlug(race);
+  if (!BUNDLED_PORTRAIT_GENDERS.includes(genderSlug)) return '';
+  if (!BUNDLED_RACE_SET.has(raceSlug)) return '';
+  return '/assets/avatars/' + genderSlug + '-' + raceSlug + '.png';
+}
