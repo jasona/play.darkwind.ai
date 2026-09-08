@@ -1,4 +1,5 @@
 import type { AutomationStep, ConfigKind, TimerDefinition } from "../model/configuration";
+import { parseAutofishLine } from "../runtime/fishing-auto";
 import type { Session } from "../runtime/session";
 
 // @ts-expect-error Shared legacy/Phase 2 executor core is JavaScript.
@@ -215,6 +216,13 @@ export function createTerminalAutomation({
     reconcileTimers();
   });
   const sendCommand = (text: string): boolean => {
+    // The Auto-Angler's slash command is session state, not an alias, so it
+    // is answered here before the alias engine sees the line.
+    const autofishArgs = parseAutofishLine(text);
+    if (autofishArgs) {
+      session.fishingAuto.handleCommand(autofishArgs);
+      return true;
+    }
     const result = executeAliasLine(text, { ...context(), isRoot: true });
     return Boolean(result.sent || result.localOnly || result.handled);
   };

@@ -30,6 +30,7 @@ import type { SessionAudio } from "./audio";
 import type { SessionCombat } from "./combat";
 import type { SessionActivity } from "./activity";
 import type { SessionDps } from "./dps";
+import type { SessionFishingAuto } from "./fishing-auto";
 import type { SessionTutorial } from "./tutorial";
 import type { SessionVisualEffects } from "./visual-effects";
 import type { TerminalProcessing } from "./terminal-processing";
@@ -102,6 +103,8 @@ export interface Session {
   readonly audio: SessionAudio;
   readonly combat: SessionCombat;
   readonly dps: SessionDps;
+  /** The Auto-Angler: plays the fishing mini-game unattended when switched on. */
+  readonly fishingAuto: SessionFishingAuto;
   /** What the player is doing in the world, for the Scene panel's idle animations. */
   readonly activity: SessionActivity;
   readonly tutorial: SessionTutorial;
@@ -151,6 +154,7 @@ export interface SessionParts {
   combat: SessionCombat;
   dps: SessionDps;
   activity: SessionActivity;
+  fishingAuto: SessionFishingAuto;
   tutorial: SessionTutorial;
   visualEffects: SessionVisualEffects;
   gmcpDiagnostics: SessionGmcpDiagnostics;
@@ -184,6 +188,7 @@ export function createSession(parts: SessionParts): Session {
     combat,
     dps,
     activity,
+    fishingAuto,
     tutorial,
     visualEffects,
     gmcpDiagnostics,
@@ -416,6 +421,7 @@ export function createSession(parts: SessionParts): Session {
 
     dps,
     activity,
+    fishingAuto,
 
     tutorial,
 

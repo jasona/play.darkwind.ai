@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import type { Readable } from "svelte/store";
   import type { DarkwindFishingFight, InteractionFishing } from "../gmcp/contracts/interactions.ts";
+  import type { FishingAutoSnapshot } from "../runtime/fishing-auto.ts";
   import type { Session } from "../runtime/session.ts";
   import type { PanelState } from "./workspace.ts";
   // @ts-expect-error The shared deterministic fishing core has no declaration file.
@@ -73,6 +74,16 @@
   let held = $state(false);
   let castControl = $state<HTMLButtonElement>();
   let gameControl = $state<HTMLButtonElement>();
+  // The Auto-Angler's view of the run. Its casts and hooks arrive as actions
+  // the stage mirrors, so an automated cast charges the same meter a manual
+  // one does.
+  let auto = $state<FishingAutoSnapshot>(activeSession.fishingAuto.getSnapshot());
+  let seenAutoActionSeq = activeSession.fishingAuto.getSnapshot().action?.seq ?? 0;
+  const autoHaltVisible = $derived(
+    !auto.enabled &&
+      auto.haltReason !== "" &&
+      (phase === "idle" || phase === "nobait" || phase === "caught" || phase === "escaped"),
+  );
 
   let lastOpen: typeof initialFishing.open = null;
   let lastBite: typeof initialFishing.bite = null;
@@ -154,6 +165,7 @@
       accuracy: Math.round(computeAccuracy(state) * 1_000) / 1_000,
       tensionPeak: Math.round(state.tensionPeak),
     });
+    activeSession.fishingAuto.notifyFightEnd();
     releaseFight();
     phase = "resolving";
   }
@@ -170,7 +182,12 @@
       bitePercent = windowMs > 0 ? Math.max(0, ((biteEndsAt - now) / windowMs) * 100) : 0;
       if (bitePercent <= 0) return;
     } else if (phase === "fight" && sim) {
-      const outcome = sim.step(dt, held);
+      // The Auto-Angler's one delegation point. Guarded so that with the
+      // addon off this costs a boolean test and never allocates a state.
+      const effectiveHeld = auto.enabled
+        ? activeSession.fishingAuto.resolveHeld(held, sim.getState(), dt)
+        : held;
+      const outcome = sim.step(dt, effectiveHeld);
       fightState = sim.getState();
       if (fightState.tension > 85 && !tensionWarned) {
         tensionWarned = true;
@@ -254,9 +271,47 @@
     }
   }
 
+  // Mirrors what the Auto-Angler did to the session on the stage: charge the
+  // meter when it begins a cast, settle into waiting when the cast goes out,
+  // and into hooking when it hooks.
+  function reconcileAuto(next: FishingAutoSnapshot): void {
+    auto = next;
+    const action = next.action;
+    if (!action || action.seq === seenAutoActionSeq) return;
+    seenAutoActionSeq = action.seq;
+    if (action.kind === "cast-begin") {
+      if (phase !== "ready") return;
+      castPower = 0;
+      castStartedAt = performance.now();
+      phase = "casting";
+      startLoop();
+    } else if (action.kind === "cast") {
+      stopLoop();
+      if (action.power !== null) castPower = action.power;
+      phase = "waiting";
+      activeSession.audio.playLocal("fishing", "cast");
+    } else if (action.kind === "cast-abandoned") {
+      if (phase !== "casting") return;
+      stopLoop();
+      phase = "ready";
+    } else if (action.kind === "hook") {
+      stopLoop();
+      phase = "hooking";
+      activeSession.audio.playLocal("fishing", "hook");
+    }
+  }
+
+  // A deliberate press on the stage is the player taking over. Releases and
+  // auto-repeat keys do not count: a release only matters after a press, and
+  // that press already handed control back.
+  function takeOver(): void {
+    activeSession.fishingAuto.notifyManualInput();
+  }
+
   function beginCast(event?: PointerEvent): void {
     if (phase !== "ready") return;
     if (event && (!event.isPrimary || event.button !== 0)) return;
+    if (event) takeOver();
     event?.preventDefault();
     castPointerId = event?.pointerId ?? null;
     if (event && castControl) castControl.setPointerCapture(event.pointerId);
@@ -288,6 +343,7 @@
     if (!event.repeat && (event.code === "Space" || event.code === "Enter")) {
       event.preventDefault();
       event.stopPropagation();
+      takeOver();
       beginCast();
     }
   }
@@ -310,6 +366,7 @@
   }
 
   function handleGamePointerDown(event: PointerEvent): void {
+    takeOver();
     if (phase === "bite") {
       event.preventDefault();
       hook();
@@ -332,17 +389,24 @@
     if (event.code !== "Space") return;
     event.preventDefault();
     if (event.repeat) return;
+    takeOver();
     if (phase === "bite") hook();
     else if (phase === "fight") held = true;
   }
 
   function stopFishing(): void {
+    // Closing is the player taking over, and reports as such rather than as
+    // the session ending.
+    takeOver();
     if (open) activeSession.interactions.cancelFishing(open.session);
   }
 
   $effect(() => {
     const unsubscribe = activeSession.interactions.subscribe((snapshot) => {
       untrack(() => reconcile(snapshot.fishing));
+    });
+    const unsubscribeAuto = activeSession.fishingAuto.subscribe((snapshot) => {
+      untrack(() => reconcileAuto(snapshot));
     });
     const unsubscribeConnection = activeSession.subscribeConnection((snapshot) => {
       if (snapshot.state === "connected") return;
@@ -354,6 +418,7 @@
     });
     return () => {
       unsubscribe();
+      unsubscribeAuto();
       unsubscribeConnection();
       stopMotion();
       stopReel();
@@ -370,7 +435,9 @@
     class="fishing-stage"
     data-phase={phase}
     data-terrain={open?.terrain ?? ""}
+    data-auto={auto.enabled ? "on" : "off"}
   >
+    {#if auto.enabled}<div class="fishing-auto-badge" aria-hidden="true">AUTO</div>{/if}
     <button class="fishing-close" type="button" aria-label="Stop fishing" onclick={stopFishing}
       >&#x2715;</button
     >
@@ -526,6 +593,9 @@
       {:else if phase === "escaped"}
         {ESCAPE_TEXT[fishing.escaped?.reason ?? "slack"] ?? ESCAPE_TEXT.slack}
       {/if}
+      {#if autoHaltVisible}
+        Auto-Angler stopped: {auto.haltReason}
+      {/if}
     </div>
 
     {#if phase === "ready" || phase === "casting"}
@@ -558,7 +628,9 @@
     {/if}
 
     <div class="fishing-status" aria-live="polite">
-      {#if phase === "bite"}
+      {#if auto.enabled}
+        {auto.summary}
+      {:else if phase === "bite"}
         Tap anywhere in the fishing pane, click, or press Space now.
       {:else if phase === "fight"}
         Keep the green bar over the fish. Ease off when tension gets hot.
@@ -568,6 +640,26 @@
         Re-bait your hook to try again.
       {/if}
     </div>
+  </div>
+  <div class="fishing-auto-strip">
+    <button
+      class="fishing-auto-toggle"
+      type="button"
+      aria-pressed={auto.enabled}
+      title="Let the Auto-Angler play the mini-game. Any press on the stage hands control back."
+      onclick={() => activeSession.fishingAuto.toggle()}
+    >
+      Auto: {auto.enabled ? "ON" : "OFF"}
+    </button>
+    <span class="fishing-auto-summary">
+      {#if auto.enabled}
+        {auto.summary}
+      {:else if auto.haltReason}
+        Stopped: {auto.haltReason}
+      {:else}
+        Plays the mini-game for you. Type /autofish for status.
+      {/if}
+    </span>
   </div>
 </section>
 

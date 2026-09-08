@@ -28,6 +28,7 @@ import { createSessionAudio, type RetainedSoundManager } from "./audio";
 import { createSessionCombat } from "./combat";
 import { createSessionActivity } from "./activity";
 import { createSessionDps } from "./dps";
+import { createSessionFishingAuto } from "./fishing-auto";
 import { createSessionTutorial } from "./tutorial";
 import { createSessionVisualEffects } from "./visual-effects";
 import { createSessionGmcpDiagnostics } from "./gmcp-diagnostics";
@@ -233,6 +234,15 @@ export function createSessionFromState(
   const activity = createSessionActivity(scope, eventBus, world, {
     ...(deps.now !== undefined ? { now: deps.now } : {}),
   });
+  const fishingAuto = createSessionFishingAuto(
+    scope,
+    eventBus,
+    interactions,
+    (command) =>
+      transport.send(command, { kind: "command", size: command.length, preview: command }),
+    () => transport.state === "connected",
+    { storage: deps.storage, storageKey: `darkflow-autofish:${characterProfileId}` },
+  );
   const gmcpDiagnostics = createSessionGmcpDiagnostics(gmcp, scope, world, {
     ...(deps.now !== undefined ? { now: deps.now } : {}),
   });
@@ -293,9 +303,18 @@ export function createSessionFromState(
     combat,
     dps,
     activity,
+    fishingAuto,
     tutorial,
     visualEffects,
     gmcpDiagnostics,
+  });
+
+  // The Auto-Angler reports through the terminal: notices as system lines,
+  // and every command it sends as an echo, so the player can audit the run.
+  fishingAuto.subscribeMessages((message) => {
+    if (message.kind === "echo") {
+      session.terminal.appendOutput(`> ${message.text}\n`, "echo-line");
+    } else session.terminal.appendSystemMessage(message.text);
   });
 
   return {
