@@ -1,4 +1,6 @@
+import type { CharacterConfigurationSnapshot, SessionConfiguration } from "../configuration/editor";
 import { deepFreeze } from "../configuration/snapshot";
+import type { CommandButtonDefinition, ConfigSourceKind } from "../model/configuration";
 import type { StorageLike } from "../storage/repository";
 import type { Unsubscribe } from "./events";
 import type { ResourceScope } from "./resource-scope";
@@ -6,9 +8,15 @@ import type { ResourceScope } from "./resource-scope";
 /**
  * The Command Board: a panel of player-defined buttons that each send one
  * command line, with an optional keyboard shortcut that works anywhere in the
- * client. This runtime owns the board's contents and persistence; the panel
- * renders it, records shortcuts, and sends the commands through the terminal
- * so aliases and slash commands apply exactly as if typed.
+ * client.
+ *
+ * The buttons are configuration: the "commandButtons" kind of the
+ * configuration graph, so they live beside aliases and key mappings, appear
+ * in Settings, travel with exports, and can be shared through configuration
+ * sets. This runtime projects the character's effective command buttons for
+ * the panel, edits the character's local definitions on its behalf, and
+ * applies the shortcut rules. Only the grid's column count is the panel's
+ * own, kept in local storage as a layout preference.
  *
  * Shortcuts are stored as a modifier prefix plus a KeyboardEvent.code, for
  * example "Alt+Digit1", "Ctrl+Shift+KeyH", or "F5". A shortcut must carry
@@ -21,9 +29,13 @@ export interface CommandBoardButton {
   readonly command: string;
   /** Normalised shortcut, or "" for none. */
   readonly shortcut: string;
+  readonly enabled: boolean;
+  /** Where the definition came from; only "local" buttons are edited from the panel. */
+  readonly source: ConfigSourceKind;
 }
 
 export interface CommandBoardSnapshot {
+  /** Effective buttons in resolution order: shared sets first, then the character's own. */
   readonly buttons: readonly CommandBoardButton[];
   /** Grid columns, 1..8. */
   readonly columns: number;
@@ -33,6 +45,7 @@ export interface CommandBoardButtonInput {
   label?: string;
   command?: string;
   shortcut?: string;
+  enabled?: boolean;
 }
 
 /** The parts of a KeyboardEvent a shortcut is read from. */
@@ -49,19 +62,23 @@ export interface ShortcutEventLike {
 export interface SessionCommandBoard {
   getSnapshot(): CommandBoardSnapshot;
   subscribe(listener: (snapshot: CommandBoardSnapshot) => void): Unsubscribe;
-  addButton(input?: CommandBoardButtonInput): CommandBoardButton;
+  /** Whether the panel may edit this button (it is one of the character's own). */
+  isEditable(id: string): boolean;
+  /** Appends a local button; null when the write was refused. */
+  addButton(input?: CommandBoardButtonInput): CommandBoardButton | null;
   updateButton(id: string, patch: CommandBoardButtonInput): boolean;
   removeButton(id: string): boolean;
-  /** Moves a button by `delta` places (negative is earlier). */
+  /** Moves a local button by `delta` places among the local buttons (negative is earlier). */
   moveButton(id: string, delta: number): boolean;
   setColumns(columns: number): void;
-  /** The button whose shortcut the key event matches, if any. */
+  /** The enabled button whose shortcut the key event matches, if any. */
   matchShortcut(event: ShortcutEventLike): CommandBoardButton | null;
-  /** Puts the starter buttons back. */
-  resetToDefaults(): void;
+  /** Replaces the character's own buttons with the starter set. */
+  resetToDefaults(): boolean;
 }
 
 export interface SessionCommandBoardOptions {
+  /** Where the column count persists. */
   storage?: StorageLike;
   storageKey?: string;
   createId?: () => string;
@@ -185,89 +202,118 @@ function cleanText(value: unknown, max: number): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
-function normalizeButton(raw: unknown, id: string): CommandBoardButton {
+/** A command button definition with every field cleaned and bounded. */
+export function normalizeCommandButton(raw: unknown, id: string): CommandButtonDefinition {
   const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   return {
     id,
+    enabled: source.enabled === undefined ? true : Boolean(source.enabled),
     label: cleanText(source.label, COMMAND_BOARD_LIMITS.maxLabel),
     command: cleanText(source.command, COMMAND_BOARD_LIMITS.maxCommand),
     shortcut: normalizeShortcut(source.shortcut),
   };
 }
 
-/** A stored or supplied board, bounded and cleaned. Unknown shapes give an empty board. */
-export function normalizeBoard(raw: unknown, createId: () => string): CommandBoardSnapshot {
+/** The grid column count from a stored preference record, bounded. */
+export function normalizeColumns(raw: unknown): number {
   const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
-  const seen = new Set<string>();
-  const buttons: CommandBoardButton[] = [];
-  const list = Array.isArray(source.buttons) ? source.buttons : [];
-  for (const entry of list.slice(0, COMMAND_BOARD_LIMITS.maxButtons)) {
-    const rawId =
-      entry && typeof entry === "object" && typeof (entry as { id?: unknown }).id === "string"
-        ? (entry as { id: string }).id
-        : "";
-    let id = rawId && !seen.has(rawId) ? rawId : createId();
-    while (seen.has(id)) id = createId();
-    seen.add(id);
-    buttons.push(normalizeButton(entry, id));
-  }
-  return {
-    buttons,
-    columns: clampInt(
-      source.columns,
-      DEFAULT_COLUMNS,
-      COMMAND_BOARD_LIMITS.minColumns,
-      COMMAND_BOARD_LIMITS.maxColumns,
-    ),
-  };
+  return clampInt(
+    source.columns,
+    DEFAULT_COLUMNS,
+    COMMAND_BOARD_LIMITS.minColumns,
+    COMMAND_BOARD_LIMITS.maxColumns,
+  );
+}
+
+function fallbackId(): string {
+  const random = Math.random().toString(36).slice(2, 10);
+  return `b${Date.now().toString(36)}${random}`;
 }
 
 export function createSessionCommandBoard(
   scope: ResourceScope,
+  configuration: Pick<SessionConfiguration, "subscribe" | "replaceLocalDefinitions">,
   options: SessionCommandBoardOptions = {},
 ): SessionCommandBoard {
-  let counter = 0;
   const createId =
-    options.createId ?? (() => `b${Date.now().toString(36)}${(counter++).toString(36)}`);
+    options.createId ??
+    (() =>
+      typeof globalThis.crypto?.randomUUID === "function"
+        ? globalThis.crypto.randomUUID()
+        : fallbackId());
   const listeners = new Set<(snapshot: CommandBoardSnapshot) => void>();
   let disposed = false;
+  let local: CommandButtonDefinition[] = [];
+  let effective: CommandBoardButton[] = [];
+  let columns = DEFAULT_COLUMNS;
+  let snapshot: CommandBoardSnapshot = deepFreeze({ buttons: [], columns });
 
-  const defaults = (): CommandBoardSnapshot => ({
-    buttons: DEFAULT_COMMAND_BOARD_BUTTONS.map((input) => normalizeButton(input, createId())),
-    columns: DEFAULT_COLUMNS,
-  });
+  // ---- Column preference -----------------------------------------------------
 
-  const load = (): CommandBoardSnapshot => {
-    if (!options.storage || !options.storageKey) return defaults();
+  const loadColumns = (): number => {
+    if (!options.storage || !options.storageKey) return DEFAULT_COLUMNS;
     try {
       const raw = options.storage.getItem(options.storageKey);
-      if (raw === null) return defaults();
-      return normalizeBoard(JSON.parse(raw), createId);
+      return raw === null ? DEFAULT_COLUMNS : normalizeColumns(JSON.parse(raw));
     } catch {
-      return defaults();
+      return DEFAULT_COLUMNS;
     }
   };
 
-  let snapshot: CommandBoardSnapshot = deepFreeze(load());
-
-  const save = (): void => {
+  const saveColumns = (): void => {
     if (!options.storage || !options.storageKey) return;
     try {
-      options.storage.setItem(
-        options.storageKey,
-        JSON.stringify({ version: 1, columns: snapshot.columns, buttons: snapshot.buttons }),
-      );
+      options.storage.setItem(options.storageKey, JSON.stringify({ version: 2, columns }));
     } catch (error) {
-      console.warn("Command Board could not save", error);
+      console.warn("Command Board could not save its layout", error);
     }
   };
 
-  const commit = (next: CommandBoardSnapshot): void => {
+  // ---- Projection ------------------------------------------------------------
+
+  const publish = (): void => {
     if (disposed) return;
-    snapshot = deepFreeze(next);
-    save();
+    snapshot = deepFreeze({ buttons: effective, columns });
     for (const listener of [...listeners]) listener(snapshot);
   };
+
+  const project = (config: CharacterConfigurationSnapshot): void => {
+    local = config.localDefinitions.commandButtons.map((definition) =>
+      normalizeCommandButton(definition, definition.id),
+    );
+    effective = config.effectiveConfiguration.commandButtons.map(({ definition, source }) => ({
+      ...normalizeCommandButton(definition, definition.id),
+      source: source.kind,
+    }));
+  };
+
+  const writeLocal = (next: CommandButtonDefinition[]): boolean => {
+    if (disposed) return false;
+    const result = configuration.replaceLocalDefinitions("commandButtons", next);
+    if (!result.success) {
+      console.warn("Command Board could not save", result.message);
+      return false;
+    }
+    return true;
+  };
+
+  const localIndex = (id: string): number => local.findIndex((button) => button.id === id);
+
+  columns = loadColumns();
+  // The configuration snapshot reads the stored graph and throws when the
+  // graph is not in storage (compatibility harnesses build sessions that way).
+  // The board then simply has no buttons; writes report their own failure.
+  try {
+    scope.own(
+      "subscription",
+      configuration.subscribe((config) => {
+        project(config);
+        publish();
+      }),
+    );
+  } catch (error) {
+    console.warn("Command Board could not read the configuration graph", error);
+  }
 
   scope.own("teardown", () => {
     disposed = true;
@@ -284,71 +330,79 @@ export function createSessionCommandBoard(
       return scope.own("subscription", () => listeners.delete(listener));
     },
 
+    isEditable(id) {
+      return localIndex(id) >= 0;
+    },
+
     addButton(input = {}) {
-      const button = normalizeButton(input, createId());
-      if (disposed || snapshot.buttons.length >= COMMAND_BOARD_LIMITS.maxButtons) return button;
-      commit({ ...snapshot, buttons: [...snapshot.buttons, button] });
-      return button;
+      if (disposed || local.length >= COMMAND_BOARD_LIMITS.maxButtons) return null;
+      const definition = normalizeCommandButton(input, createId());
+      if (!writeLocal([...local, definition])) return null;
+      return { ...definition, source: "local" };
     },
 
     updateButton(id, patch) {
-      const index = snapshot.buttons.findIndex((button) => button.id === id);
-      if (disposed || index < 0) return false;
-      const current = snapshot.buttons[index]!;
-      const next = normalizeButton(
+      const index = localIndex(id);
+      if (index < 0) return false;
+      const current = local[index]!;
+      const next = normalizeCommandButton(
         {
+          enabled: patch.enabled !== undefined ? patch.enabled : current.enabled,
           label: patch.label !== undefined ? patch.label : current.label,
           command: patch.command !== undefined ? patch.command : current.command,
           shortcut: patch.shortcut !== undefined ? patch.shortcut : current.shortcut,
         },
         id,
       );
-      const buttons = snapshot.buttons.slice();
-      buttons[index] = next;
-      commit({ ...snapshot, buttons });
-      return true;
+      const definitions = local.slice();
+      definitions[index] = next;
+      return writeLocal(definitions);
     },
 
     removeButton(id) {
-      if (disposed || !snapshot.buttons.some((button) => button.id === id)) return false;
-      commit({ ...snapshot, buttons: snapshot.buttons.filter((button) => button.id !== id) });
-      return true;
+      if (localIndex(id) < 0) return false;
+      return writeLocal(local.filter((button) => button.id !== id));
     },
 
     moveButton(id, delta) {
-      const from = snapshot.buttons.findIndex((button) => button.id === id);
-      if (disposed || from < 0) return false;
-      const to = Math.max(0, Math.min(snapshot.buttons.length - 1, from + Math.trunc(delta)));
+      const from = localIndex(id);
+      if (from < 0) return false;
+      const to = Math.max(0, Math.min(local.length - 1, from + Math.trunc(delta)));
       if (to === from) return false;
-      const buttons = snapshot.buttons.slice();
-      const [button] = buttons.splice(from, 1);
-      buttons.splice(to, 0, button!);
-      commit({ ...snapshot, buttons });
-      return true;
+      const definitions = local.slice();
+      const [button] = definitions.splice(from, 1);
+      definitions.splice(to, 0, button!);
+      return writeLocal(definitions);
     },
 
-    setColumns(columns) {
+    setColumns(next) {
       if (disposed) return;
-      const next = clampInt(
+      const value = clampInt(
+        next,
         columns,
-        snapshot.columns,
         COMMAND_BOARD_LIMITS.minColumns,
         COMMAND_BOARD_LIMITS.maxColumns,
       );
-      if (next !== snapshot.columns) commit({ ...snapshot, columns: next });
+      if (value === columns) return;
+      columns = value;
+      saveColumns();
+      publish();
     },
 
     matchShortcut(event) {
       const shortcut = shortcutFromEvent(event);
       if (!shortcut) return null;
       return (
-        snapshot.buttons.find((button) => button.shortcut === shortcut && button.command) ?? null
+        effective.find(
+          (button) => button.enabled && button.shortcut === shortcut && button.command,
+        ) ?? null
       );
     },
 
     resetToDefaults() {
-      if (disposed) return;
-      commit(defaults());
+      return writeLocal(
+        DEFAULT_COMMAND_BOARD_BUTTONS.map((input) => normalizeCommandButton(input, createId())),
+      );
     },
   };
 }

@@ -23,7 +23,7 @@ function storage(initial = {}, failures = []) {
 }
 
 function graph(ids) {
-  const definitions = { aliases: [], triggers: [], highlights: [], functions: [], keyMappings: [], timers: [] };
+  const definitions = { aliases: [], triggers: [], highlights: [], functions: [], keyMappings: [], timers: [], commandButtons: [] };
   const refs = structuredClone(definitions);
   return {
     schemaVersion: 1,

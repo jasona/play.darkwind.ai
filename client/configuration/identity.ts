@@ -1,5 +1,6 @@
 import type {
   AliasDefinition,
+  CommandButtonDefinition,
   ConfigKind,
   FunctionDefinition,
   HighlightDefinition,
@@ -45,6 +46,15 @@ export function timerIdentityKey(definition: TimerDefinition): string {
   return normalizeWhitespace(definition.name).toLowerCase();
 }
 
+/**
+ * Command button identity is the id itself: two buttons with the same label
+ * are two buttons, and a shared set's button is never overridden by a local
+ * one that happens to read the same.
+ */
+export function commandButtonIdentityKey(definition: CommandButtonDefinition): string {
+  return typeof definition.id === "string" ? definition.id : "";
+}
+
 export function identityKeyFor(kind: ConfigKind, definition: unknown): string {
   switch (kind) {
     case "aliases":
@@ -59,6 +69,8 @@ export function identityKeyFor(kind: ConfigKind, definition: unknown): string {
       return keyMappingIdentityKey(definition as KeyMappingDefinition);
     case "timers":
       return timerIdentityKey(definition as TimerDefinition);
+    case "commandButtons":
+      return commandButtonIdentityKey(definition as CommandButtonDefinition);
   }
 }
 

@@ -1,5 +1,6 @@
 import type {
   AliasDefinition,
+  CommandButtonDefinition,
   ConfigSourceMetadata,
   FunctionDefinition,
   HighlightDefinition,
@@ -26,6 +27,7 @@ export interface EffectiveConfigurationSnapshot {
   functions: EffectiveDefinition<FunctionDefinition>[];
   keyMappings: EffectiveDefinition<KeyMappingDefinition>[];
   timers: EffectiveDefinition<TimerDefinition>[];
+  commandButtons: EffectiveDefinition<CommandButtonDefinition>[];
 }
 
 /**
@@ -61,6 +63,9 @@ function deepFreezeLocalDefinitions(definitions: LocalDefinitions): LocalDefinit
       definitions.keyMappings.map((item) => deepFreeze(item)),
     ) as KeyMappingDefinition[],
     timers: Object.freeze(definitions.timers.map((item) => deepFreeze(item))) as TimerDefinition[],
+    commandButtons: Object.freeze(
+      definitions.commandButtons.map((item) => deepFreeze(item)),
+    ) as CommandButtonDefinition[],
   };
 }
 

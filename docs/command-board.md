@@ -30,18 +30,33 @@ Shortcuts are stored by physical key (KeyboardEvent.code), so they stay on
 the same key across keyboard layouts, and are shown as Alt+1, Ctrl+Shift+H,
 F5, or Num 1.
 
-## Storage
+## Where the buttons live
 
-The board is saved per character in local storage under
-`darkflow-command-board:<characterProfileId>` as one record: the column
-count and the ordered buttons (id, label, command, shortcut). Up to 48
+Command buttons are configuration: the `commandButtons` kind of the
+configuration graph, beside aliases, triggers, and key mappings. Each button
+is a definition with an id, an enabled flag, a label, a command, and a
+shortcut. The panel edits the character's own (local) buttons; buttons that
+arrive through a shared configuration set are shown on the board and, in edit
+mode, as read-only cards that point to Settings. Settings has a Command
+buttons editor under Controls, next to Key mappings, with the same recorder.
+Disabled buttons stay in the list but are hidden from the board and never
+fire.
+
+Graphs saved before command buttons existed load unchanged: validation fills
+in empty `commandButtons` arrays for each character. Legacy settings bundles
+carry no command buttons, so importing one leaves the character's buttons
+alone.
+
+Only the grid's column count is the panel's own, saved per character in local
+storage under `darkflow-command-board:<characterProfileId>`. Up to 48 local
 buttons; labels are capped at 40 characters and commands at 500.
 
 ## Wiring
 
-`client/runtime/command-board.ts` owns the board (`session.commandBoard`):
-the buttons, their normalisation and persistence, and the shortcut rules
-(`shortcutFromEvent`, `normalizeShortcut`, `shortcutLabel`, `matchShortcut`).
-`client/workspace/CommandBoardPanel.svelte` renders it, records shortcuts,
-listens for them on the window in the capture phase, and sends commands
-through `session.terminal.executeCommand`.
+`client/runtime/command-board.ts` (`session.commandBoard`) projects the
+character's effective command buttons from `session.configuration`, writes
+local edits back through `replaceLocalDefinitions("commandButtons", ...)`,
+and applies the shortcut rules (`shortcutFromEvent`, `normalizeShortcut`,
+`shortcutLabel`, `matchShortcut`). `client/workspace/CommandBoardPanel.svelte`
+renders it, records shortcuts, listens for them on the window in the capture
+phase, and sends commands through `session.terminal.executeCommand`.

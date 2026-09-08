@@ -26,6 +26,14 @@
   let recordingId = $state<string | null>(null);
   // Buttons that just fired, for a short press highlight.
   let pressed = $state<Record<string, boolean>>({});
+  // The character's own buttons, in their stored order; shared-set buttons
+  // are shown but edited in Settings.
+  const localIds = $derived(
+    snapshot.buttons.filter((button) => button.source === "local").map((button) => button.id),
+  );
+  const visibleButtons = $derived(
+    editing ? snapshot.buttons : snapshot.buttons.filter((button) => button.enabled),
+  );
   const columnChoices = Array.from(
     { length: COMMAND_BOARD_LIMITS.maxColumns - COMMAND_BOARD_LIMITS.minColumns + 1 },
     (_, index) => COMMAND_BOARD_LIMITS.minColumns + index,
@@ -47,7 +55,7 @@
   }
 
   function addButton(): void {
-    board.addButton({ label: "New", command: "" });
+    board.addButton({ label: "Button " + (localIds.length + 1), command: "" });
   }
 
   function insideDialog(target: EventTarget | null): boolean {
@@ -127,7 +135,7 @@
       <button
         type="button"
         class="cboard-tool"
-        disabled={snapshot.buttons.length >= COMMAND_BOARD_LIMITS.maxButtons}
+        disabled={localIds.length >= COMMAND_BOARD_LIMITS.maxButtons}
         onclick={addButton}>+ Add button</button
       >
       <label class="cboard-columns">
@@ -144,16 +152,21 @@
       <button
         type="button"
         class="cboard-tool cboard-tool-quiet"
-        onclick={() => board.resetToDefaults()}>Reset</button
+        title="Replace your own buttons with Look, Inventory, and Score"
+        onclick={() => board.resetToDefaults()}
       >
-    {:else if snapshot.buttons.some((button) => button.shortcut)}
+        {localIds.length ? "Reset to starters" : "Add starter buttons"}
+      </button>
+    {:else if snapshot.buttons.some((button) => button.enabled && button.shortcut)}
       <span class="cboard-hint">Shortcuts work anywhere in the client.</span>
     {/if}
   </div>
 
-  {#if snapshot.buttons.length === 0}
+  {#if visibleButtons.length === 0}
     <p class="cboard-empty">
-      No buttons yet. {editing ? "Add one above." : "Press Edit to add some."}
+      No buttons yet. {editing
+        ? "Add one above, or add the starter buttons."
+        : "Press Edit to add some, or manage them under Settings."}
     </p>
   {/if}
 
@@ -161,9 +174,24 @@
     class="cboard-grid"
     style:grid-template-columns={`repeat(${snapshot.columns}, minmax(0, 1fr))`}
   >
-    {#each snapshot.buttons as button, index (button.id)}
-      {#if editing}
-        <div class="cboard-editor" class:is-recording={recordingId === button.id}>
+    {#each visibleButtons as button (button.id)}
+      {#if editing && button.source !== "local"}
+        <div class="cboard-editor cboard-editor-shared" class:is-disabled={!button.enabled}>
+          <div class="cboard-shared-title">
+            <span class="cboard-label">{button.label || button.command || "Untitled"}</span>
+            <span class="cboard-badge">Shared set</span>
+          </div>
+          <code class="cboard-shared-command">{button.command}</code>
+          <span class="cboard-shared-note">
+            {button.shortcut ? shortcutLabel(button.shortcut) + ". " : ""}Edit in Settings.
+          </span>
+        </div>
+      {:else if editing}
+        <div
+          class="cboard-editor"
+          class:is-recording={recordingId === button.id}
+          class:is-disabled={!button.enabled}
+        >
           <input
             class="cboard-field"
             type="text"
@@ -200,18 +228,30 @@
             {/if}
           </button>
           <div class="cboard-editor-actions">
+            <label
+              class="cboard-enabled"
+              title="Disabled buttons stay in the list but are hidden and never fire"
+            >
+              <input
+                type="checkbox"
+                checked={button.enabled}
+                onchange={(event) =>
+                  board.updateButton(button.id, { enabled: event.currentTarget.checked })}
+              />
+              On
+            </label>
             <button
               type="button"
               class="cboard-tool cboard-tool-quiet"
               aria-label="Move earlier"
-              disabled={index === 0}
+              disabled={localIds.indexOf(button.id) <= 0}
               onclick={() => board.moveButton(button.id, -1)}>&larr;</button
             >
             <button
               type="button"
               class="cboard-tool cboard-tool-quiet"
               aria-label="Move later"
-              disabled={index === snapshot.buttons.length - 1}
+              disabled={localIds.indexOf(button.id) === localIds.length - 1}
               onclick={() => board.moveButton(button.id, 1)}>&rarr;</button
             >
             <button

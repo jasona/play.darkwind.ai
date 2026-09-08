@@ -82,6 +82,7 @@ export function createEmptyLocalDefinitions(): LocalDefinitions {
     functions: [],
     keyMappings: [],
     timers: [],
+    commandButtons: [],
   };
 }
 
@@ -94,5 +95,6 @@ export function createEmptyConfigurationSetRefs(): ConfigurationSetRefs {
     functions: [],
     keyMappings: [],
     timers: [],
+    commandButtons: [],
   };
 }

@@ -1,6 +1,11 @@
 import typia from "typia";
 
-import { CONFIG_KINDS, type ConfigKind, type ConfigurationSet } from "./configuration";
+import {
+  CONFIG_KINDS,
+  CONFIG_KINDS_ADDED_AFTER_V1,
+  type ConfigKind,
+  type ConfigurationSet,
+} from "./configuration";
 import type { ApplicationStateV1, ServerProfile } from "./profiles";
 import type { SessionDescriptor } from "./session-contract";
 
@@ -71,9 +76,45 @@ export function parseSessionDescriptorInput(json: string): ValidationResult<Sess
   return validateSessionDescriptorInput(parsed);
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Fills in the per-character arrays for configuration kinds that did not
+ * exist when a stored graph was written, so an older graph still validates.
+ * Only missing keys are added; nothing present is touched, and anything
+ * that is not shaped like a graph is returned as-is for validation to reject.
+ */
+export function upgradeApplicationStateInput(input: unknown): unknown {
+  if (!isPlainRecord(input) || !isPlainRecord(input.characterProfiles)) return input;
+  let changed = false;
+  const characterProfiles: Record<string, unknown> = {};
+  for (const [id, profile] of Object.entries(input.characterProfiles)) {
+    if (!isPlainRecord(profile)) {
+      characterProfiles[id] = profile;
+      continue;
+    }
+    let next: Record<string, unknown> = profile;
+    for (const field of ["localDefinitions", "configSetRefs"] as const) {
+      const container = next[field];
+      if (!isPlainRecord(container)) continue;
+      const missing = CONFIG_KINDS_ADDED_AFTER_V1.filter((kind) => !(kind in container));
+      if (!missing.length) continue;
+      next = {
+        ...next,
+        [field]: { ...container, ...Object.fromEntries(missing.map((kind) => [kind, []])) },
+      };
+      changed = true;
+    }
+    characterProfiles[id] = next;
+  }
+  return changed ? { ...input, characterProfiles } : input;
+}
+
 /** Validates unknown input through Typia and deterministic graph checks. */
 export function validateApplicationState(input: unknown): ValidationResult<ApplicationStateV1> {
-  const structural = validateApplicationStateV1(input);
+  const structural = validateApplicationStateV1(upgradeApplicationStateInput(input));
   if (!structural.success) {
     return {
       success: false,

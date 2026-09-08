@@ -5,6 +5,7 @@
   import type {
     AliasDefinition,
     AutomationStep,
+    CommandButtonDefinition,
     ConfigKind,
     ConfigSourceMetadata,
     FunctionDefinition,
@@ -14,6 +15,7 @@
     TriggerDefinition,
   } from "../model/configuration.ts";
   import type { ConfigSetId } from "../model/ids.ts";
+  import { normalizeShortcut, shortcutFromEvent, shortcutLabel } from "../runtime/command-board.ts";
   import type { Session } from "../runtime/session.ts";
   import AutomationStepsEditor from "./AutomationStepsEditor.svelte";
 
@@ -23,7 +25,8 @@
     | HighlightDefinition
     | FunctionDefinition
     | KeyMappingDefinition
-    | TimerDefinition;
+    | TimerDefinition
+    | CommandButtonDefinition;
   type Draft = {
     id: string;
     enabled: boolean;
@@ -31,6 +34,7 @@
     label: string;
     legacyKey: string;
     command: string;
+    shortcut: string;
     patternSource: string;
     description: string;
     group: string;
@@ -68,9 +72,15 @@
     metadata: ConfigSourceMetadata;
   } | null>(null);
   let search = $state("");
+  // Command button shortcut recorder: the next key press fills the draft.
+  let recordingShortcut = $state(false);
 
   const title = $derived(
-    kind === "keyMappings" ? "Key mappings" : `${kind.charAt(0).toUpperCase()}${kind.slice(1)}`,
+    kind === "keyMappings"
+      ? "Key mappings"
+      : kind === "commandButtons"
+        ? "Command buttons"
+        : `${kind.charAt(0).toUpperCase()}${kind.slice(1)}`,
   );
   const noun = $derived(
     kind === "keyMappings"
@@ -83,7 +93,9 @@
             ? "timer"
             : kind === "functions"
               ? "function"
-              : "highlight",
+              : kind === "commandButtons"
+                ? "button"
+                : "highlight",
   );
   const entries = $derived(snapshot.effectiveConfiguration[kind]);
   const visibleEntries = $derived(
@@ -103,6 +115,24 @@
     }),
   );
   $effect(() => {
+    if (!recordingShortcut) return;
+    const onKeydown = (event: KeyboardEvent): void => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === "Escape") {
+        if (draft) draft.shortcut = "";
+        recordingShortcut = false;
+        return;
+      }
+      const shortcut = shortcutFromEvent(event);
+      if (!shortcut) return;
+      if (draft) draft.shortcut = shortcut;
+      recordingShortcut = false;
+    };
+    window.addEventListener("keydown", onKeydown, true);
+    return () => window.removeEventListener("keydown", onKeydown, true);
+  });
+  $effect(() => {
     if (kind === "keyMappings" || draft || !visibleEntries.length) return;
     const first = visibleEntries[0]!;
     untrack(() => edit(first.definition, first.source));
@@ -116,6 +146,7 @@
       label: "",
       legacyKey: "",
       command: "",
+      shortcut: "",
       patternSource: "",
       description: "",
       group: "",
@@ -148,6 +179,15 @@
   }
 
   function toDefinition(value: Draft): Definition {
+    if (kind === "commandButtons") {
+      return {
+        id: value.id,
+        enabled: value.enabled,
+        label: value.label.trim(),
+        command: value.command.trim(),
+        shortcut: normalizeShortcut(value.shortcut),
+      };
+    }
     if (kind === "keyMappings") {
       return {
         id: value.id,
@@ -218,6 +258,7 @@
   }
 
   function labelFor(definition: Definition): string {
+    if ("shortcut" in definition) return definition.label || definition.command;
     if ("code" in definition) return definition.label || definition.code;
     if ("patternSource" in definition) return definition.patternSource;
     if ("trigger" in definition) return definition.trigger;
@@ -647,7 +688,35 @@
         {#if draft}
           <section bind:this={editor} class="editor" aria-label={`Edit ${title.toLowerCase()}`}>
             <label><input type="checkbox" bind:checked={draft.enabled} /> Enabled</label>
-            {#if kind === "highlights"}
+            {#if kind === "commandButtons"}
+              <label>Label <input bind:value={draft.label} required /></label>
+              <label
+                >Command <input
+                  bind:value={draft.command}
+                  placeholder="Sent as if typed, e.g. cast heal"
+                  required
+                /></label
+              >
+              <label
+                >Shortcut <input
+                  bind:value={draft.shortcut}
+                  placeholder="Alt+Digit1, Ctrl+Shift+KeyH, F5"
+                /></label
+              >
+              <div class="actions">
+                <span
+                  >{draft.shortcut
+                    ? `Shows as ${shortcutLabel(normalizeShortcut(draft.shortcut)) || "nothing (not allowed)"}`
+                    : "No shortcut"}</span
+                >
+                <button
+                  type="button"
+                  aria-pressed={recordingShortcut}
+                  onclick={() => (recordingShortcut = !recordingShortcut)}
+                  >{recordingShortcut ? "Press keys... (Esc clears)" : "Record shortcut"}</button
+                >
+              </div>
+            {:else if kind === "highlights"}
               <label>Pattern <input bind:value={draft.patternSource} required /></label>
               <label>Description <input bind:value={draft.description} /></label>
               <label>Group <input bind:value={draft.group} /></label>

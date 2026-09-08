@@ -77,6 +77,7 @@ function buildMinimalGraph(ids, options = {}) {
           functions: [],
           keyMappings: [],
           timers: [],
+          commandButtons: [],
         },
         localDefinitions: {
           aliases: [],
@@ -85,6 +86,7 @@ function buildMinimalGraph(ids, options = {}) {
           functions: [],
           keyMappings: [],
           timers: [],
+          commandButtons: [],
         },
         commandHistory: [],
         workspace: { version: 1, payload: {} },
@@ -105,6 +107,7 @@ function buildMinimalGraph(ids, options = {}) {
           functions: [],
           keyMappings: [],
           timers: [],
+          commandButtons: [],
         },
         localDefinitions: {
           aliases: [],
@@ -113,6 +116,7 @@ function buildMinimalGraph(ids, options = {}) {
           functions: [],
           keyMappings: [],
           timers: [],
+          commandButtons: [],
         },
         commandHistory: [],
         workspace: { version: 1, payload: {} },
@@ -208,6 +212,8 @@ test("Effective configuration executes through Vite SSR", async (t) => {
     assert.equal(identity.functionIdentityKey({ name: "  Heal  " }), "heal");
     assert.equal(identity.keyMappingIdentityKey({ code: "  F1  " }), "F1");
     assert.equal(identity.timerIdentityKey({ name: "  Tick  " }), "tick");
+    assert.equal(identity.commandButtonIdentityKey({ id: "btn-1", label: "Heal" }), "btn-1");
+    assert.equal(identity.identityKeyFor("commandButtons", { id: "btn-2" }), "btn-2");
     assert.equal(identity.identityKeyFor("aliases", { trigger: "LOOK" }), "look");
   });
 
@@ -219,6 +225,7 @@ test("Effective configuration executes through Vite SSR", async (t) => {
       "functions",
       "keyMappings",
       "timers",
+      "commandButtons",
     ]) {
       assert.equal(snapshot.BUILTIN_DEFINITIONS[kind].length, 0);
     }

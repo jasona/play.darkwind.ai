@@ -244,7 +244,7 @@ export function createSessionFromState(
     () => transport.state === "connected",
     { storage: deps.storage, storageKey: `darkflow-autofish:${characterProfileId}` },
   );
-  const commandBoard = createSessionCommandBoard(scope, {
+  const commandBoard = createSessionCommandBoard(scope, configuration, {
     storage: deps.storage,
     storageKey: `darkflow-command-board:${characterProfileId}`,
   });
