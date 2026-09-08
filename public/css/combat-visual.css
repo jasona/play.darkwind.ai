@@ -1235,3 +1235,30 @@
     display: none;
   }
 }
+
+/* Phase 2 Combat panel (CombatPanel.svelte). The rules above size the stage
+   with flex: 1 1 auto and, from 720px of container width, drop its minimum
+   height, which assumed the legacy panel body: a flex column of definite
+   height. The Dockview panel is a block of automatic height, so without a
+   column to grow in the stage collapsed to nothing at wide widths. Make the
+   panel fill its container as a column and let the stage take the room. */
+.combat-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.combat-panel > div {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.combat-panel .combat-visual {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}

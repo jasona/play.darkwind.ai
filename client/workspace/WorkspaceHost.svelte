@@ -1350,16 +1350,34 @@
       }
       if (hasTransientPanels()) cancelPendingSave();
     };
-    // Where a new fight opens. Under Room Image when that panel is open in the
-    // grid, so the Enemy panel never lands on top of the terminal; otherwise
-    // split to the right of the terminal as before.
+    // Where a fight opens. Under Room Image when that panel is in the grid, so
+    // the Enemy panel never lands on top of the terminal; otherwise to the
+    // right of the terminal. A floating anchor is never used: Dockview cannot
+    // split a floating group, so a panel placed against one becomes a tab
+    // inside that window instead, which is how the Enemy panel used to end up
+    // hiding a floated terminal.
     const combatPlacement = (): PanelPlacement => {
-      const anchor = "roomImage";
-      const anchored =
-        currentWorkspace.hasPanel(anchor) && !currentWorkspace.inspectPanel(anchor)?.floating;
-      return anchored
-        ? { kind: "grid", direction: "below", referencePanelId: anchor }
-        : { kind: "grid", direction: "right", referencePanelId: terminal.id };
+      const roomImage = currentWorkspace.inspectPanel("roomImage");
+      if (roomImage && !roomImage.floating) {
+        return { kind: "grid", direction: "below", referencePanelId: "roomImage" };
+      }
+      const terminalInfo = currentWorkspace.inspectPanel(terminal.id);
+      if (terminalInfo && !terminalInfo.floating) {
+        return { kind: "grid", direction: "right", referencePanelId: terminal.id };
+      }
+      return { kind: "grid", direction: "right" };
+    };
+    // An Enemy panel that shares a group with the terminal would only cover it
+    // when activated, so a new fight moves it out instead.
+    const combatPanelCoversTerminal = (): boolean => {
+      const enemy = currentWorkspace.inspectPanel(combatPanel.id);
+      const terminalInfo = currentWorkspace.inspectPanel(terminal.id);
+      return (
+        !!enemy &&
+        !!terminalInfo &&
+        enemy.groupId !== null &&
+        enemy.groupId === terminalInfo.groupId
+      );
     };
     const syncCombatPanel = (next: typeof combatSnapshot) => {
       combatSnapshot = next;
@@ -1370,7 +1388,8 @@
         seenCombatEncounter = encounter;
         if (reveal) {
           const focused = document.activeElement;
-          if (exists) currentWorkspace.activatePanel(combatPanel.id);
+          if (exists && !combatPanelCoversTerminal())
+            currentWorkspace.activatePanel(combatPanel.id);
           else currentWorkspace.addOrUpdatePanel({ ...combatPanel, placement: combatPlacement() });
           const restoreFocus = () => {
             if (focused instanceof HTMLElement && focused.isConnected) {
