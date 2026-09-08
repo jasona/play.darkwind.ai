@@ -19,6 +19,7 @@
   import InformationPanel from "./InformationPanel.svelte";
   import ConnectionHealthPanel from "./ConnectionHealthPanel.svelte";
   import CombatPanel from "./CombatPanel.svelte";
+  import CommandBoardPanel from "./CommandBoardPanel.svelte";
   import DpsPanel from "./DpsPanel.svelte";
   import FishingPanel from "./FishingPanel.svelte";
   import IdePanel from "./IdePanel.svelte";
@@ -163,11 +164,18 @@
     state: {},
     minSize: { width: 200, height: 120 },
   };
+  const commandBoardPanel: WorkspacePanelSpec = {
+    id: "commandBoard",
+    kind: "commandBoard",
+    title: "Command Board",
+    state: {},
+    minSize: { width: 220, height: 100 },
+  };
 
   type PanelMenuGroupName = "Character" | "Progress" | "Social" | "System" | "World";
   type PanelMenuItem = {
     group: PanelMenuGroupName;
-    kind: "information" | "world" | "chat" | "dps" | "scene" | "gmcp-debug";
+    kind: "information" | "world" | "chat" | "dps" | "scene" | "commandBoard" | "gmcp-debug";
     panel: WorkspacePanelSpec;
   };
   const informationPanelGroups: Record<InformationPanelId, PanelMenuGroupName> = {
@@ -199,6 +207,7 @@
     { group: "World", kind: "scene", panel: combatPanel },
     { group: "Social", kind: "chat", panel: chatPanel },
     { group: "Character", kind: "dps", panel: dpsPanel },
+    { group: "System", kind: "commandBoard", panel: commandBoardPanel },
     ...(debugGmcp
       ? [{ group: "System" as const, kind: "gmcp-debug" as const, panel: gmcpDebugPanel }]
       : []),
@@ -439,6 +448,7 @@
   let combatPanelOpen = $state(false);
   let chatPanelOpen = $state(false);
   let dpsPanelOpen = $state(false);
+  let commandBoardOpen = $state(false);
   let gmcpDebugOpen = $state(false);
   let launcherOpen = $state(false);
   let mobilePresentation = $state(false);
@@ -485,6 +495,7 @@
     session.world.setVisiblePanels(worldSubscriptions);
     chatPanelOpen = workspace?.hasPanel(chatPanel.id) ?? false;
     dpsPanelOpen = workspace?.hasPanel(dpsPanel.id) ?? false;
+    commandBoardOpen = workspace?.hasPanel(commandBoardPanel.id) ?? false;
   }
 
   function informationPanelOpen(panel: WorkspacePanelSpec): boolean {
@@ -575,6 +586,35 @@
     syncVisiblePanels();
   }
 
+  // The Command Board sits under the terminal, where the buttons are within
+  // reach of the command line; a floated terminal gets a floating board.
+  async function toggleCommandBoardPanel(activate = true): Promise<void> {
+    if (!workspace) return;
+    if (workspace.hasPanel(commandBoardPanel.id)) await workspace.removePanel(commandBoardPanel.id);
+    else {
+      const terminalInfo = workspace.inspectPanel(terminal.id);
+      const width = Math.min(520, Math.max(260, host.clientWidth - 16));
+      const height = Math.min(220, Math.max(120, host.clientHeight - 16));
+      workspace.addOrUpdatePanel({
+        ...commandBoardPanel,
+        placement:
+          terminalInfo && !terminalInfo.floating
+            ? { kind: "grid", direction: "below", referencePanelId: terminal.id }
+            : {
+                kind: "floating",
+                bounds: {
+                  left: Math.max(0, Math.round((host.clientWidth - width) / 2)),
+                  top: Math.max(0, host.clientHeight - height - 8),
+                  width,
+                  height,
+                },
+              },
+      });
+      if (activate) workspace.activatePanel(commandBoardPanel.id);
+    }
+    syncVisiblePanels();
+  }
+
   // Where the Scene opens. Under Room Image when that panel is in the grid,
   // so it never lands on top of the terminal; otherwise to the right of the
   // terminal. A floating anchor is never used: Dockview cannot split a
@@ -636,6 +676,7 @@
     if (item.kind === "gmcp-debug") return gmcpDebugOpen;
     if (item.kind === "dps") return dpsPanelOpen;
     if (item.kind === "scene") return combatPanelOpen;
+    if (item.kind === "commandBoard") return commandBoardOpen;
     return chatPanelOpen;
   }
 
@@ -645,6 +686,7 @@
     else if (item.kind === "gmcp-debug") void toggleGmcpDebugPanel(false);
     else if (item.kind === "dps") void toggleDpsPanel(false);
     else if (item.kind === "scene") void toggleScenePanel(false);
+    else if (item.kind === "commandBoard") void toggleCommandBoardPanel(false);
     else void toggleChatPanel(false);
   }
 
@@ -857,6 +899,13 @@
         canClose: () => true,
         collapsible: true,
         component: GmcpDebugPanel,
+        floatable: true,
+        session,
+      },
+      commandBoard: {
+        canClose: () => true,
+        collapsible: true,
+        component: CommandBoardPanel,
         floatable: true,
         session,
       },
@@ -1080,6 +1129,7 @@
         chatPanel,
         dpsPanel,
         combatPanel,
+        commandBoardPanel,
       ];
       if (next.version === 1) {
         if (!currentWorkspace.restore(next, panels)) return false;
@@ -1780,6 +1830,13 @@
         onclick={() => selectPanel(() => void toggleDpsPanel())}
       >
         {dpsPanelOpen ? "Close DPS Meter" : "Open DPS Meter"}
+      </button>
+      <button
+        type="button"
+        aria-pressed={commandBoardOpen}
+        onclick={() => selectPanel(() => void toggleCommandBoardPanel())}
+      >
+        {commandBoardOpen ? "Close Command Board" : "Open Command Board"}
       </button>
       <button
         type="button"

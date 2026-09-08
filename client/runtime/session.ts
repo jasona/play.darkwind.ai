@@ -29,6 +29,7 @@ import type { SessionNotifications } from "./notifications";
 import type { SessionAudio } from "./audio";
 import type { SessionCombat } from "./combat";
 import type { SessionActivity } from "./activity";
+import type { SessionCommandBoard } from "./command-board";
 import type { SessionDps } from "./dps";
 import type { SessionFishingAuto } from "./fishing-auto";
 import type { SessionTutorial } from "./tutorial";
@@ -105,6 +106,8 @@ export interface Session {
   readonly dps: SessionDps;
   /** The Auto-Angler: plays the fishing mini-game unattended when switched on. */
   readonly fishingAuto: SessionFishingAuto;
+  /** The Command Board: player-defined command buttons with client-wide shortcuts. */
+  readonly commandBoard: SessionCommandBoard;
   /** What the player is doing in the world, for the Scene panel's idle animations. */
   readonly activity: SessionActivity;
   readonly tutorial: SessionTutorial;
@@ -155,6 +158,7 @@ export interface SessionParts {
   dps: SessionDps;
   activity: SessionActivity;
   fishingAuto: SessionFishingAuto;
+  commandBoard: SessionCommandBoard;
   tutorial: SessionTutorial;
   visualEffects: SessionVisualEffects;
   gmcpDiagnostics: SessionGmcpDiagnostics;
@@ -189,6 +193,7 @@ export function createSession(parts: SessionParts): Session {
     dps,
     activity,
     fishingAuto,
+    commandBoard,
     tutorial,
     visualEffects,
     gmcpDiagnostics,
@@ -422,6 +427,7 @@ export function createSession(parts: SessionParts): Session {
     dps,
     activity,
     fishingAuto,
+    commandBoard,
 
     tutorial,
 

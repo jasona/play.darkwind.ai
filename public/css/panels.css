@@ -2651,3 +2651,180 @@ body.zork-only-mode #panels-menu {
   border-color: var(--df-accent);
   color: var(--df-accent);
 }
+
+/* Command Board: player-defined command buttons with client-wide shortcuts
+   (client/workspace/CommandBoardPanel.svelte). */
+.command-board-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  min-height: 0;
+  padding: 8px;
+  overflow: auto;
+}
+.cboard-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: calc(11px * var(--pane-font-scale, 1));
+  color: var(--df-muted);
+}
+.cboard-tool {
+  padding: 3px 9px;
+  border: 1px solid var(--df-border);
+  border-radius: 6px;
+  background: var(--df-panel, var(--df-bg));
+  color: var(--df-text);
+  font: inherit;
+  font-size: calc(11px * var(--pane-font-scale, 1));
+  cursor: pointer;
+}
+.cboard-tool[aria-pressed="true"] {
+  border-color: var(--df-accent);
+  background: var(--df-accent);
+  color: var(--df-bg);
+}
+.cboard-tool:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.cboard-tool-quiet {
+  color: var(--df-muted);
+}
+.cboard-tool-danger:hover {
+  border-color: var(--df-err);
+  color: var(--df-err);
+}
+.cboard-columns {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cboard-columns select {
+  padding: 2px 4px;
+  border: 1px solid var(--df-border);
+  border-radius: 4px;
+  background: var(--df-bg);
+  color: var(--df-text);
+  font: inherit;
+}
+.cboard-hint {
+  margin-left: auto;
+  color: var(--df-faint);
+}
+.cboard-empty {
+  margin: 0;
+  color: var(--df-muted);
+  font-size: calc(12px * var(--pane-font-scale, 1));
+}
+.cboard-grid {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+.cboard-btn {
+  display: flex;
+  min-width: 0;
+  min-height: 40px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 6px 8px;
+  border: 1px solid var(--df-border);
+  border-radius: 8px;
+  background: var(--df-panel, var(--df-bg));
+  color: var(--df-text);
+  font: inherit;
+  font-size: calc(12px * var(--pane-font-scale, 1));
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 80ms ease,
+    border-color 80ms ease,
+    background-color 80ms ease;
+}
+.cboard-btn:hover:not(:disabled) {
+  border-color: var(--df-accent);
+}
+.cboard-btn:focus-visible {
+  outline: 2px solid var(--df-accent);
+  outline-offset: 1px;
+}
+.cboard-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.cboard-btn.is-pressed {
+  transform: scale(0.96);
+  border-color: var(--df-accent);
+  background: color-mix(in srgb, var(--df-accent) 22%, var(--df-panel, var(--df-bg)));
+}
+.cboard-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cboard-kbd {
+  padding: 1px 5px;
+  border: 1px solid var(--df-border);
+  border-radius: 4px;
+  background: var(--df-bg);
+  color: var(--df-muted);
+  font-family: var(--df-font-mono);
+  font-size: calc(9px * var(--pane-font-scale, 1));
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+.cboard-editor {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px dashed var(--df-border);
+  border-radius: 8px;
+  background: var(--df-panel, var(--df-bg));
+}
+.cboard-editor.is-recording {
+  border-color: var(--df-accent);
+  border-style: solid;
+}
+.cboard-field {
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--df-border);
+  border-radius: 4px;
+  background: var(--df-bg);
+  color: var(--df-text);
+  font: inherit;
+  font-size: calc(11px * var(--pane-font-scale, 1));
+}
+.cboard-field-command {
+  font-family: var(--df-font-mono);
+}
+.cboard-shortcut {
+  padding: 3px 6px;
+  border: 1px solid var(--df-border);
+  border-radius: 4px;
+  background: var(--df-bg);
+  color: var(--df-muted);
+  font: inherit;
+  font-family: var(--df-font-mono);
+  font-size: calc(10px * var(--pane-font-scale, 1));
+  text-align: left;
+  cursor: pointer;
+}
+.cboard-shortcut[aria-pressed="true"] {
+  border-color: var(--df-accent);
+  color: var(--df-accent);
+}
+.cboard-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}

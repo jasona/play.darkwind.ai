@@ -27,6 +27,7 @@ import { createSessionNotifications } from "./notifications";
 import { createSessionAudio, type RetainedSoundManager } from "./audio";
 import { createSessionCombat } from "./combat";
 import { createSessionActivity } from "./activity";
+import { createSessionCommandBoard } from "./command-board";
 import { createSessionDps } from "./dps";
 import { createSessionFishingAuto } from "./fishing-auto";
 import { createSessionTutorial } from "./tutorial";
@@ -243,6 +244,10 @@ export function createSessionFromState(
     () => transport.state === "connected",
     { storage: deps.storage, storageKey: `darkflow-autofish:${characterProfileId}` },
   );
+  const commandBoard = createSessionCommandBoard(scope, {
+    storage: deps.storage,
+    storageKey: `darkflow-command-board:${characterProfileId}`,
+  });
   const gmcpDiagnostics = createSessionGmcpDiagnostics(gmcp, scope, world, {
     ...(deps.now !== undefined ? { now: deps.now } : {}),
   });
@@ -304,6 +309,7 @@ export function createSessionFromState(
     dps,
     activity,
     fishingAuto,
+    commandBoard,
     tutorial,
     visualEffects,
     gmcpDiagnostics,
