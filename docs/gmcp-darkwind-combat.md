@@ -180,7 +180,9 @@ badges and summaries.
 ## Canvas Stage
 
 When the browser provides a 2D canvas, the Combat pane draws its stage on a
-canvas: a backdrop chosen from the room's canonical terrain tile, two
+canvas: a backdrop that is the room's own image when a Darkwind.Room.Image
+has arrived for the current room (the canonical terrain tile stands in until
+it loads and takes over if it fails, or when the room has no art), two
 procedural fighter figures whose heads are the player and target portraits,
 and per-event effects (lunge,
 slash arcs and burst for `hit`/`critical`, a whiff arc for `miss`, a sidestep

@@ -44,13 +44,13 @@ test('layout keeps the tokens inside the stage at any size', () => {
 
 test('backdrop resolves room terrain to a shipped tile and never concatenates server text', () => {
   assert.deepEqual(resolveStageBackdrop({ terrain: 'forest' }),
-    { terrain: 'forest', tile: '/assets/tiles/forest.jpg' });
+    { terrain: 'forest', tile: '/assets/tiles/forest.jpg', image: '' });
   assert.deepEqual(resolveStageBackdrop({ environment: ['dark', 'underground cave'] }),
-    { terrain: 'underground', tile: '/assets/tiles/underground.jpg' });
+    { terrain: 'underground', tile: '/assets/tiles/underground.jpg', image: '' });
   assert.deepEqual(resolveStageBackdrop({ terrain: '../../etc/passwd' }),
-    { terrain: 'outside', tile: '/assets/tiles/outside.jpg' });
+    { terrain: 'outside', tile: '/assets/tiles/outside.jpg', image: '' });
   assert.deepEqual(resolveStageBackdrop(null),
-    { terrain: 'outside', tile: '/assets/tiles/outside.jpg' });
+    { terrain: 'outside', tile: '/assets/tiles/outside.jpg', image: '' });
 });
 
 test('perspective decides sides before actor ids, and observed fights fall back to ids', () => {
@@ -183,4 +183,13 @@ test('reduced motion removes movement but keeps the outcome readable', () => {
   assert.deepEqual(burst.particles, [], 'no particle spray under reduced motion');
   assert.deepEqual(idleOffset('player', 1234, true), { x: 0, y: 0 });
   assert.notEqual(idleOffset('player', 1234, false).y, 0);
+});
+
+test('a room image rides ahead of the terrain tile as the backdrop', () => {
+  assert.deepEqual(resolveStageBackdrop({ terrain: 'forest' }, { url: 'https://media.example/clearing.png' }),
+    { terrain: 'forest', tile: '/assets/tiles/forest.jpg', image: 'https://media.example/clearing.png' });
+  assert.equal(resolveStageBackdrop({ terrain: 'forest' }, '/room/42.jpg').image, '/room/42.jpg', 'root-relative art is fine');
+  assert.equal(resolveStageBackdrop({ terrain: 'forest' }, 'javascript:alert(1)').image, '', 'only http(s) or root-relative addresses are drawn');
+  assert.equal(resolveStageBackdrop({ terrain: 'forest' }, { url: 42 }).image, '');
+  assert.equal(resolveStageBackdrop(null, null).image, '');
 });

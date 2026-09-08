@@ -82,13 +82,27 @@ export function computeStageLayout(width, height) {
   };
 }
 
-export function resolveStageBackdrop(room) {
+// A room image URL is only ever drawn, never read back, so the stage accepts
+// any http(s) or root-relative address and lets the image element decide.
+function stageImageUrl(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text || text.length > 2048) return '';
+  return /^(?:https?:\/\/|\/)[^\s]+$/i.test(text) ? text : '';
+}
+
+// The backdrop is the room's own image when the server has sent one, with
+// the terrain tile behind it as the fallback and as the choice for rooms
+// without art.
+export function resolveStageBackdrop(room, image) {
   const environment = room && typeof room === 'object'
     ? [room.terrain, room.environment, room.env, room.type]
     : room;
   const terrain = getPrimaryTerrain(environment);
-  if (!STAGE_BACKDROP_TILES.has(terrain)) return { terrain: 'outside', tile: '/assets/tiles/outside.jpg' };
-  return { terrain, tile: '/assets/tiles/' + terrain + '.jpg' };
+  const art = stageImageUrl(image && typeof image === 'object' ? image.url : image);
+  if (!STAGE_BACKDROP_TILES.has(terrain)) {
+    return { terrain: 'outside', tile: '/assets/tiles/outside.jpg', image: art };
+  }
+  return { terrain, tile: '/assets/tiles/' + terrain + '.jpg', image: art };
 }
 
 // Which token acts and which absorbs the outcome. Perspective is the

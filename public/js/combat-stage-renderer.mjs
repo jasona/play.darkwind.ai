@@ -17,8 +17,9 @@
 // `data` is the session combat snapshot plus the recipient-only inputs the
 // stage uses for the player token: `status` (Char.Status, for the race,
 // guild, and gender descriptor and the bundled portrait), `inventory`
-// (Char.Items, for the wielded and worn equipment), and `room` (Room.Info,
-// for the terrain backdrop). All three are optional.
+// (Char.Items, for the wielded and worn equipment), `room` (Room.Info, for
+// the terrain backdrop), and `roomImage` (the Darkwind.Room.Image URL, drawn
+// as the backdrop ahead of the terrain tile). All four are optional.
 
 import { buildCombatView } from './combat-visual-core.mjs';
 import { createCombatStage, isCanvasStageSupported } from './combat-stage.mjs';
@@ -221,6 +222,7 @@ export function createCombatStageRenderer(bodyEl, options = {}) {
     host.hud.innerHTML = hudHtml(view, event, label, announcement);
     host.stage.update(view, {
       room: data.room || null,
+      roomImage: data.roomImage || null,
       playerFallback: [view.player.fallbackImage, PLAYER_FALLBACK_IMAGE].filter(Boolean),
       targetFallback: view.target.isNpc ? NPC_FALLBACK_IMAGE : PLAYER_FALLBACK_IMAGE,
     });

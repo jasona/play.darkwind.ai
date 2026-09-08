@@ -3,6 +3,7 @@
   import type { Readable } from "svelte/store";
   import type { SessionCombatSnapshot } from "../runtime/combat.ts";
   import type { Session } from "../runtime/session.ts";
+  import type { SessionWorldSnapshot } from "../runtime/world.ts";
   import type { PanelState } from "./workspace.ts";
   // @ts-expect-error The canvas combat stage is retained JavaScript without a declaration file.
   import * as combatRenderer from "../../public/js/combat-stage-renderer.mjs";
@@ -20,6 +21,24 @@
   const activeSession: Session = resolvedSession;
   let root: HTMLElement;
   let body: HTMLElement;
+
+  function roomId(world: SessionWorldSnapshot): string {
+    const id = world.room?.num ?? world.room?.id;
+    return id === undefined || id === null ? "" : String(id);
+  }
+
+  // The room's art, only while it belongs to the room the player is in; a
+  // stale image from the previous room must not become this fight's backdrop.
+  function roomImageUrl(world: SessionWorldSnapshot): string {
+    const art = world.roomImage;
+    if (!world.connected || !art) return "";
+    const id = roomId(world);
+    return id && art.roomId === id && art.generation === world.roomGeneration ? art.url : "";
+  }
+
+  function backdropKey(world: SessionWorldSnapshot): string {
+    return String(world.roomGeneration) + ":" + roomImageUrl(world);
+  }
 
   onMount(() => {
     const renderer = createCombatStageRenderer(body);
@@ -51,6 +70,7 @@
     const render = (snapshot: SessionCombatSnapshot): void => {
       lastSnapshot = snapshot;
       shouldPresent = snapshot.shouldPresent;
+      const world = activeSession.world.getSnapshot();
       try {
         renderSucceeded =
           renderer.render({
@@ -60,8 +80,10 @@
             avatar: snapshot.avatar,
             status: snapshot.status,
             inventory: snapshot.inventory,
-            // The stage paints a terrain backdrop from the current room.
-            room: activeSession.world.getSnapshot().room,
+            // The stage paints the room's image as the backdrop when one is
+            // showing, and the terrain tile otherwise.
+            room: world.room,
+            roomImage: roomImageUrl(world),
           }) !== false;
         syncReadiness();
       } catch (error) {
@@ -77,10 +99,11 @@
     const sizeObserver = new ResizeObserver(syncReadiness);
     sizeObserver.observe(root);
     const unsubscribe = activeSession.combat.subscribe(render);
-    let lastRoomGeneration = activeSession.world.getSnapshot().roomGeneration;
+    let lastBackdropKey = backdropKey(activeSession.world.getSnapshot());
     const unsubscribeWorld = activeSession.world.subscribe((world) => {
-      if (world.roomGeneration === lastRoomGeneration) return;
-      lastRoomGeneration = world.roomGeneration;
+      const key = backdropKey(world);
+      if (key === lastBackdropKey) return;
+      lastBackdropKey = key;
       if (lastSnapshot) render(lastSnapshot);
     });
     return () => {

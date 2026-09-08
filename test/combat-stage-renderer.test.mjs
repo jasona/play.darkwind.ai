@@ -527,3 +527,28 @@ test('without a 2D canvas the DOM card renderer takes over and the contract stil
   renderer.dispose();
   assert.equal(renderer.render({ model: combatModel() }), false, 'a disposed renderer reports failure');
 });
+
+test('a room image becomes the stage backdrop and the terrain tile is its fallback', () => {
+  const body = bodyElement();
+  createdImages.length = 0;
+  const renderer = createCombatStageRenderer(body);
+  renderer.render({
+    model: combatModel({ encounter_id: 'encounter-room-art' }),
+    vitals: { hp: 50, maxhp: 100 },
+    enemy: { enemy_name: 'a drake', enemy_curhp: 5, enemy_maxhp: 100, enemy_is_npc: 1 },
+    avatar: {},
+    room: { terrain: 'forest' },
+    roomImage: 'https://media.example/clearing.png',
+  });
+  const art = createdImages.find((img) => img.src === 'https://media.example/clearing.png');
+  assert.ok(art, 'the room image is requested');
+  assert.ok(!createdImages.some((img) => img.src === '/assets/tiles/forest.jpg'),
+    'the tile is not fetched while the art is still the first choice');
+  art.fail();
+  assert.ok(createdImages.some((img) => img.src === '/assets/tiles/forest.jpg'),
+    'the terrain tile is requested once the art fails');
+  const canvas = findCanvas(body);
+  canvas.drawLog.length = 0;
+  runFrame(8000);
+  assert.ok(canvas.drawLog.some(([name]) => name === 'fillRect'), 'the backdrop still paints without art');
+});

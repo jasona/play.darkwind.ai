@@ -159,8 +159,10 @@ export function createCombatStage(doc, options = {}) {
       }
       this._view = view;
       this._reducedMotion = !!view.reducedMotion;
-      this._backdrop = resolveStageBackdrop(sources.room);
-      this._ensureImage(this._backdrop.tile, '');
+      this._backdrop = resolveStageBackdrop(sources.room, sources.roomImage);
+      // The room's art is the backdrop when it loads; the terrain tile stands
+      // in until then and takes over for good if the art fails.
+      this._ensureImage(this._backdrop.image, [this._backdrop.tile]);
       this._playerFallback = fallbackList(sources.playerFallback);
       this._targetFallback = fallbackList(sources.targetFallback);
       this._ensureImage(view.player.image, this._playerFallback);
@@ -435,16 +437,21 @@ export function createCombatStage(doc, options = {}) {
     _drawBackdrop(c, layout) {
       const w = layout.width;
       const h = layout.height;
-      const tile = this._imageFor(this._backdrop.tile, '');
+      const art = this._imageFor(this._backdrop.image, [this._backdrop.tile]);
+      const artEntry = this._backdrop.image ? this._images.get(this._backdrop.image) : null;
+      const isRoomArt = !!(art && artEntry && artEntry.img === art);
       c.fillStyle = '#05090e';
       c.fillRect(-w, -h, w * 3, h * 3);
-      if (tile && tile.naturalWidth > 0) {
-        const scale = Math.max(w / tile.naturalWidth, h / tile.naturalHeight) * 1.08;
-        const drawW = tile.naturalWidth * scale;
-        const drawH = tile.naturalHeight * scale;
+      if (art && art.naturalWidth > 0) {
+        const scale = Math.max(w / art.naturalWidth, h / art.naturalHeight) * (isRoomArt ? 1.02 : 1.08);
+        const drawW = art.naturalWidth * scale;
+        const drawH = art.naturalHeight * scale;
         c.save();
-        c.globalAlpha = 0.55;
-        c.drawImage(tile, (w - drawW) / 2, (h - drawH) / 2, drawW, drawH);
+        // Room art is the point of the scene, so it shows through more than a
+        // repeating terrain tile does; the wash below still keeps the tokens
+        // readable on a bright painting.
+        c.globalAlpha = isRoomArt ? 0.82 : 0.55;
+        c.drawImage(art, (w - drawW) / 2, (h - drawH) / 2, drawW, drawH);
         c.restore();
       }
       const wash = c.createLinearGradient(0, 0, 0, h);
