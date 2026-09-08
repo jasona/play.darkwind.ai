@@ -2873,3 +2873,96 @@ body.zork-only-mode #panels-menu {
   color: var(--df-muted);
   font-size: calc(10px * var(--pane-font-scale, 1));
 }
+
+/* Single-bar vital panels (client/workspace/VitalBarPanel.svelte). The bar
+   fills whatever size the player gives the panel and the text scales with it,
+   so a tiny strip and a big readout both stay legible. */
+.vital-bar-panel {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  padding: 6px;
+  container-type: size;
+}
+.vital-bar-track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--df-border);
+  border-radius: 8px;
+  background: var(--df-btn-secondary);
+}
+.vital-bar-fill {
+  height: 100%;
+  border-radius: 7px;
+  transition:
+    width 0.3s ease,
+    background-color 0.3s ease;
+}
+.vital-bar-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.6em;
+  padding: 0 0.7em;
+  color: var(--df-text);
+  font-size: clamp(11px, 42cqh, 44px);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-shadow:
+    0 1px 2px #000,
+    0 0 6px rgba(0, 0, 0, 0.7);
+  white-space: nowrap;
+}
+.vital-bar-name {
+  flex: 0 0 auto;
+  opacity: 0.85;
+  font-size: 0.8em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.vital-bar-value {
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-family: var(--df-font-mono);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+}
+.vital-bar-percent {
+  flex: 0 0 auto;
+  opacity: 0.75;
+  font-size: 0.75em;
+  font-variant-numeric: tabular-nums;
+}
+@container (max-width: 150px) {
+  .vital-bar-percent {
+    display: none;
+  }
+}
+@container (max-width: 100px) {
+  .vital-bar-name {
+    display: none;
+  }
+}
+.vital-bar-panel.is-unknown .vital-bar-text {
+  color: var(--df-muted);
+}
+.vital-bar-panel.is-critical .vital-bar-fill {
+  animation: vital-bar-pulse 1.1s ease-in-out infinite;
+}
+@keyframes vital-bar-pulse {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.45);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vital-bar-panel.is-critical .vital-bar-fill {
+    animation: none;
+  }
+}

@@ -20,6 +20,7 @@
   import ConnectionHealthPanel from "./ConnectionHealthPanel.svelte";
   import CombatPanel from "./CombatPanel.svelte";
   import CommandBoardPanel from "./CommandBoardPanel.svelte";
+  import VitalBarPanel from "./VitalBarPanel.svelte";
   import DpsPanel from "./DpsPanel.svelte";
   import FishingPanel from "./FishingPanel.svelte";
   import IdePanel from "./IdePanel.svelte";
@@ -171,11 +172,26 @@
     state: {},
     minSize: { width: 220, height: 100 },
   };
+  // Single-bar vital readouts: floating, resizable copies of the HP and SP
+  // rows of the Vitals panel, for players who want a big bar of their own
+  // wherever they like. The ids are the ones vital-bar.ts knows.
+  const vitalBarPanels: readonly WorkspacePanelSpec[] = [
+    { id: "hpBar", kind: "hpBar", title: "HP Bar", state: {}, minSize: { width: 120, height: 40 } },
+    { id: "spBar", kind: "spBar", title: "SP Bar", state: {}, minSize: { width: 120, height: 40 } },
+  ];
 
   type PanelMenuGroupName = "Character" | "Progress" | "Social" | "System" | "World";
   type PanelMenuItem = {
     group: PanelMenuGroupName;
-    kind: "information" | "world" | "chat" | "dps" | "scene" | "commandBoard" | "gmcp-debug";
+    kind:
+      | "information"
+      | "world"
+      | "chat"
+      | "dps"
+      | "scene"
+      | "commandBoard"
+      | "vitalBar"
+      | "gmcp-debug";
     panel: WorkspacePanelSpec;
   };
   const informationPanelGroups: Record<InformationPanelId, PanelMenuGroupName> = {
@@ -207,6 +223,11 @@
     { group: "World", kind: "scene", panel: combatPanel },
     { group: "Social", kind: "chat", panel: chatPanel },
     { group: "Character", kind: "dps", panel: dpsPanel },
+    ...vitalBarPanels.map((panel): PanelMenuItem => ({
+      group: "Character",
+      kind: "vitalBar",
+      panel,
+    })),
     { group: "System", kind: "commandBoard", panel: commandBoardPanel },
     ...(debugGmcp
       ? [{ group: "System" as const, kind: "gmcp-debug" as const, panel: gmcpDebugPanel }]
@@ -449,6 +470,7 @@
   let chatPanelOpen = $state(false);
   let dpsPanelOpen = $state(false);
   let commandBoardOpen = $state(false);
+  let openVitalBarIds = $state<string[]>([]);
   let gmcpDebugOpen = $state(false);
   let launcherOpen = $state(false);
   let mobilePresentation = $state(false);
@@ -496,6 +518,44 @@
     chatPanelOpen = workspace?.hasPanel(chatPanel.id) ?? false;
     dpsPanelOpen = workspace?.hasPanel(dpsPanel.id) ?? false;
     commandBoardOpen = workspace?.hasPanel(commandBoardPanel.id) ?? false;
+    openVitalBarIds = vitalBarPanels
+      .filter((panel) => workspace?.hasPanel(panel.id) ?? false)
+      .map((panel) => panel.id);
+  }
+
+  function vitalBarOpen(panel: WorkspacePanelSpec): boolean {
+    return openVitalBarIds.includes(panel.id);
+  }
+
+  // Vital bars float by default, stacked at the bottom-left where the eye
+  // rests near the command line; a rails-off layout splits them under the
+  // terminal instead so they stay reachable on a small screen.
+  async function toggleVitalBarPanel(panel: WorkspacePanelSpec, activate = true): Promise<void> {
+    if (!workspace) return;
+    if (workspace.hasPanel(panel.id)) await workspace.removePanel(panel.id);
+    else {
+      const index = vitalBarPanels.findIndex((candidate) => candidate.id === panel.id);
+      const width = Math.min(280, Math.max(160, host.clientWidth - 16));
+      const height = 64;
+      const terminalInfo = workspace.inspectPanel(terminal.id);
+      workspace.addOrUpdatePanel({
+        ...panel,
+        placement:
+          railsEnabled || !terminalInfo || terminalInfo.floating
+            ? {
+                kind: "floating",
+                bounds: {
+                  left: 12,
+                  top: Math.max(0, host.clientHeight - (height + 12) * (index + 1) - 8),
+                  width,
+                  height,
+                },
+              }
+            : { kind: "grid", direction: "below", referencePanelId: terminal.id },
+      });
+      if (activate) workspace.activatePanel(panel.id);
+    }
+    syncVisiblePanels();
   }
 
   function informationPanelOpen(panel: WorkspacePanelSpec): boolean {
@@ -677,6 +737,7 @@
     if (item.kind === "dps") return dpsPanelOpen;
     if (item.kind === "scene") return combatPanelOpen;
     if (item.kind === "commandBoard") return commandBoardOpen;
+    if (item.kind === "vitalBar") return vitalBarOpen(item.panel);
     return chatPanelOpen;
   }
 
@@ -687,6 +748,7 @@
     else if (item.kind === "dps") void toggleDpsPanel(false);
     else if (item.kind === "scene") void toggleScenePanel(false);
     else if (item.kind === "commandBoard") void toggleCommandBoardPanel(false);
+    else if (item.kind === "vitalBar") void toggleVitalBarPanel(item.panel, false);
     else void toggleChatPanel(false);
   }
 
@@ -909,6 +971,8 @@
         floatable: true,
         session,
       },
+      hpBar: { canClose: () => true, component: VitalBarPanel, floatable: true, session },
+      spBar: { canClose: () => true, component: VitalBarPanel, floatable: true, session },
       dps: {
         canClose: () => true,
         collapsible: true,
@@ -1130,6 +1194,7 @@
         dpsPanel,
         combatPanel,
         commandBoardPanel,
+        ...vitalBarPanels,
       ];
       if (next.version === 1) {
         if (!currentWorkspace.restore(next, panels)) return false;
@@ -1838,6 +1903,15 @@
       >
         {commandBoardOpen ? "Close Command Board" : "Open Command Board"}
       </button>
+      {#each vitalBarPanels as panel (panel.id)}
+        <button
+          type="button"
+          aria-pressed={vitalBarOpen(panel)}
+          onclick={() => selectPanel(() => void toggleVitalBarPanel(panel))}
+        >
+          {vitalBarOpen(panel) ? `Close ${panel.title}` : `Open ${panel.title}`}
+        </button>
+      {/each}
       <button
         type="button"
         aria-pressed={combatPanelOpen}
