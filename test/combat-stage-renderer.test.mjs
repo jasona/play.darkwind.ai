@@ -651,3 +651,59 @@ test('the idle scene acts out looks and walks from the activity feed, but a figh
   assert.equal(renderer.playActivity({ kind: 'look', seq: 4 }), false, 'a fight owns the figure');
   assert.equal(renderer.stage._sceneActions.length, 0);
 });
+
+test('the backdrop is composed once and blitted per frame, and old room paintings are evicted', () => {
+  const body = bodyElement();
+  const renderer = mountRenderer(body);
+  createdImages.length = 0;
+  const data = (n) => ({
+    model: combatModel({ encounter_id: 'encounter-perf' }),
+    vitals: { hp: 50, maxhp: 100 },
+    enemy: { enemy_name: 'a drake', enemy_curhp: 5, enemy_maxhp: 100, enemy_is_npc: 1 },
+    avatar: {},
+    room: { terrain: 'forest' },
+    roomImage: 'https://media.example/room-' + n + '.png',
+    present: true,
+  });
+  renderer.render(data(1));
+  const art = createdImages.find((img) => img.src === 'https://media.example/room-1.png');
+  art.finishLoading();
+  const canvas = findCanvas(body);
+  canvas.drawLog.length = 0;
+  runFrame(1000);
+  runFrame(1016);
+  runFrame(1032);
+  const names = canvas.drawLog.map(([name]) => name);
+  assert.equal(names.filter((name) => name === 'createLinearGradient').length, 0,
+    'the wash gradient lives in the cached layer, not in every frame');
+  assert.ok(names.filter((name) => name === 'drawImage').length >= 1, 'the cached layer is blitted');
+  const stage = renderer.stage;
+  assert.ok(stage._backdropCache && stage._backdropCache.art === art, 'the layer was composed for the room art');
+  const composedFor = stage._backdropCache;
+  runFrame(1048);
+  assert.equal(stage._backdropCache, composedFor, 'a steady frame reuses the composed layer');
+
+  for (let n = 2; n <= 20; n++) renderer.render(data(n));
+  assert.ok(stage._images.size <= 12, 'the image cache stays bounded: ' + stage._images.size);
+  assert.ok(stage._images.has('https://media.example/room-20.png'), 'the current room stays');
+  assert.ok(!stage._images.has('https://media.example/room-2.png'), 'an old room is gone');
+});
+
+test('a resting fight draws every other frame while an exchange draws every frame', () => {
+  const body = bodyElement();
+  const renderer = mountRenderer(body);
+  renderer.render({
+    model: combatModel({ encounter_id: 'encounter-rest' }),
+    vitals: { hp: 50, maxhp: 100 },
+    enemy: { enemy_name: 'a drake', enemy_curhp: 5, enemy_maxhp: 100, enemy_is_npc: 1 },
+    avatar: {},
+    present: true,
+  });
+  const stage = renderer.stage;
+  // Let the opponent finish entering so the scene is at rest.
+  for (let t = 0; t <= 1200; t += 16) runFrame(t);
+  const before = stage.frames;
+  for (let t = 1216; t <= 1216 + 16 * 20; t += 16) runFrame(t);
+  const drawn = stage.frames - before;
+  assert.ok(drawn >= 9 && drawn <= 12, 'about half of 21 resting frames are drawn: ' + drawn);
+});

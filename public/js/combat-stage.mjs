@@ -75,6 +75,13 @@ export function isCanvasStageSupported(doc) {
   }
 }
 
+// How far the camera shake can move the scene, and so how much backdrop is
+// painted beyond the canvas edge.
+const BACKDROP_PAD = 24;
+// Images kept decoded at once: the current backdrop and tokens with their
+// fallbacks, plus a little slack so a quick step back does not reload.
+const MAX_CACHED_IMAGES = 12;
+
 function fallbackList(value) {
   if (Array.isArray(value)) return value.filter((item) => typeof item === 'string' && item);
   return typeof value === 'string' && value ? [value] : [];
@@ -131,6 +138,15 @@ export function createCombatStage(doc, options = {}) {
     _height: 0,
     _dpr: 1,
     _images: new Map(),
+    // The composed backdrop (fill, room art or tile, wash, vignette) at device
+    // resolution, redrawn only when the art or the canvas size changes. Per
+    // frame the stage blits it once instead of scaling the art and filling
+    // four full-canvas gradients, which is what made a large room image
+    // expensive at 60fps.
+    _backdropCache: null,
+    // Steady-state frames (a fight with no exchange playing) draw at half
+    // rate; the idle breath reads the same at 30fps and costs half as much.
+    _restFrameSkip: false,
     _actions: [],
     _playedSeqs: new Set(),
     _encounterKey: '',
@@ -187,6 +203,11 @@ export function createCombatStage(doc, options = {}) {
       this._targetFallback = fallbackList(sources.targetFallback);
       this._ensureImage(view.player.image, this._playerFallback);
       this._ensureImage(view.target.image, this._targetFallback);
+      this._pruneImages([
+        this._backdrop.image, this._backdrop.tile,
+        view.player.image, ...this._playerFallback,
+        view.target.image, ...this._targetFallback,
+      ]);
 
       const event = view.event;
       if (event && Number.isFinite(Number(event.seq)) && !this._playedSeqs.has(event.seq)) {
@@ -279,8 +300,29 @@ export function createCombatStage(doc, options = {}) {
         const img = new ImageCtor();
         img.decoding = 'async';
         img.onload = () => {
-          entry.status = 'loaded';
-          if (!this.running) this.start();
+          // A first drawImage of an undecoded image decodes it synchronously
+          // on the main thread; a large room painting can take tens of
+          // milliseconds. Decode off-thread first where the browser allows.
+          const ready = () => {
+            if (entry.status !== 'loading') return;
+            entry.status = 'loaded';
+            if (!this.running) this.start();
+          };
+          if (typeof img.decode === 'function') {
+            let settled = false;
+            const once = () => {
+              if (settled) return;
+              settled = true;
+              ready();
+            };
+            try {
+              img.decode().then(once, once);
+            } catch (error) {
+              once();
+            }
+          } else {
+            ready();
+          }
         };
         img.onerror = () => {
           entry.status = 'failed';
@@ -292,6 +334,17 @@ export function createCombatStage(doc, options = {}) {
         entry.img = img;
       } catch (error) {
         entry.status = 'failed';
+      }
+    },
+
+    // Every room the player walks through hands the stage a new painting; a
+    // long session would otherwise keep them all decoded. Keep what the
+    // current scene can still draw and drop the rest once the cache grows.
+    _pruneImages(keep) {
+      if (this._images.size <= MAX_CACHED_IMAGES) return;
+      const wanted = new Set(keep.filter(Boolean));
+      for (const key of Array.from(this._images.keys())) {
+        if (!wanted.has(key)) this._images.delete(key);
       }
     },
 
@@ -308,7 +361,9 @@ export function createCombatStage(doc, options = {}) {
       const parent = element;
       const width = Math.max(1, Math.round(parent.clientWidth || 0));
       const height = Math.max(1, Math.round(parent.clientHeight || 0));
-      const dpr = Math.max(1, Math.min(3, (win && win.devicePixelRatio) || 1));
+      // Capped at 2: a 3x display would triple the pixels the fight loop
+      // paints every frame for no visible gain on a painted scene.
+      const dpr = Math.max(1, Math.min(2, (win && win.devicePixelRatio) || 1));
       if (width === this._width && height === this._height && dpr === this._dpr) return;
       this._width = width;
       this._height = height;
@@ -362,8 +417,14 @@ export function createCombatStage(doc, options = {}) {
       const settled = this._advancePresence(frameTime);
       this._actions = this._actions.filter((action) => t - action.startedAt < action.duration);
       this._sceneActions = this._sceneActions.filter((action) => t - action.startedAt < action.duration);
-      this._draw(t);
-      this.frames++;
+      const resting = settled && !this._actions.length && !this._sceneActions.length;
+      if (resting && this._restFrameSkip) {
+        this._restFrameSkip = false;
+      } else {
+        this._restFrameSkip = resting;
+        this._draw(t);
+        this.frames++;
+      }
       const view = this._view;
       // Idle scenes settle to a still frame; the loop only runs while a fight
       // is on, an action is playing, or the opponent is entering or leaving.
@@ -512,11 +573,82 @@ export function createCombatStage(doc, options = {}) {
     _drawBackdrop(c, layout) {
       const w = layout.width;
       const h = layout.height;
+      // The margin covers the camera shake, which translates the whole scene
+      // by up to a fraction of the token radius.
+      const pad = BACKDROP_PAD;
+      c.fillStyle = '#05090e';
+      c.fillRect(-pad, -pad, w + pad * 2, h + pad * 2);
+      const cache = this._backdropLayer(w, h);
+      if (cache) {
+        c.drawImage(cache.canvas, -pad, -pad, w + pad * 2, h + pad * 2);
+      } else {
+        this._paintBackdrop(c, w, h, 0);
+      }
+      // Side tints keep the left/right reading even on a neutral tile. They
+      // follow the tokens, so they stay live; each covers only its own patch.
+      const reach = layout.radius * 3.2;
+      for (const [x, y, color, alpha] of [
+        [layout.player.x, layout.player.y, this._palette.accent, 0.16],
+        [layout.target.x, layout.target.y, this._palette.danger, 0.14],
+      ]) {
+        const tint = c.createRadialGradient(x, y, 0, x, y, reach);
+        tint.addColorStop(0, rgba(color, alpha));
+        tint.addColorStop(1, rgba(color, 0));
+        c.fillStyle = tint;
+        c.fillRect(x - reach, y - reach, reach * 2, reach * 2);
+      }
+    },
+
+    // The static part of the backdrop at device resolution, rebuilt only when
+    // the art, the canvas size, or the pixel ratio changes. null when this
+    // environment cannot make an offscreen canvas, in which case the caller
+    // paints directly.
+    _backdropLayer(w, h) {
       const art = this._imageFor(this._backdrop.image, [this._backdrop.tile]);
       const artEntry = this._backdrop.image ? this._images.get(this._backdrop.image) : null;
       const isRoomArt = !!(art && artEntry && artEntry.img === art);
+      const dpr = this._dpr;
+      const cache = this._backdropCache;
+      if (cache && cache.art === art && cache.w === w && cache.h === h && cache.dpr === dpr) return cache;
+      if (this._backdropCache === false) return null;
+      let canvas = cache ? cache.canvas : null;
+      let ctx = cache ? cache.ctx : null;
+      if (!canvas) {
+        try {
+          canvas = doc.createElement('canvas');
+          ctx = canvas && typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null;
+        } catch (error) {
+          ctx = null;
+        }
+        if (!ctx) {
+          this._backdropCache = false;
+          return null;
+        }
+      }
+      const pad = BACKDROP_PAD;
+      canvas.width = Math.max(1, Math.round((w + pad * 2) * dpr));
+      canvas.height = Math.max(1, Math.round((h + pad * 2) * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w + pad * 2, h + pad * 2);
+      this._paintBackdrop(ctx, w, h, pad, art, isRoomArt);
+      this._backdropCache = { canvas, ctx, art, w, h, dpr };
+      return this._backdropCache;
+    },
+
+    // Fill, art, wash, and vignette for a w x h stage drawn at (pad, pad).
+    // Without an explicit `art` the current backdrop's image is resolved.
+    _paintBackdrop(c, w, h, pad, artArg, isRoomArtArg) {
+      let art = artArg;
+      let isRoomArt = isRoomArtArg;
+      if (artArg === undefined) {
+        art = this._imageFor(this._backdrop.image, [this._backdrop.tile]);
+        const artEntry = this._backdrop.image ? this._images.get(this._backdrop.image) : null;
+        isRoomArt = !!(art && artEntry && artEntry.img === art);
+      }
+      c.save();
+      c.translate(pad, pad);
       c.fillStyle = '#05090e';
-      c.fillRect(-w, -h, w * 3, h * 3);
+      c.fillRect(-pad, -pad, w + pad * 2, h + pad * 2);
       if (art && art.naturalWidth > 0) {
         const scale = Math.max(w / art.naturalWidth, h / art.naturalHeight) * (isRoomArt ? 1.02 : 1.08);
         const drawW = art.naturalWidth * scale;
@@ -534,23 +666,13 @@ export function createCombatStage(doc, options = {}) {
       wash.addColorStop(0.5, 'rgba(4, 9, 14, 0.28)');
       wash.addColorStop(1, 'rgba(2, 5, 8, 0.9)');
       c.fillStyle = wash;
-      c.fillRect(-w, -h, w * 3, h * 3);
+      c.fillRect(-pad, -pad, w + pad * 2, h + pad * 2);
       const vignette = c.createRadialGradient(w / 2, h * 0.5, Math.min(w, h) * 0.25, w / 2, h * 0.5, Math.max(w, h) * 0.75);
       vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
       vignette.addColorStop(1, 'rgba(0, 0, 0, 0.62)');
       c.fillStyle = vignette;
-      c.fillRect(-w, -h, w * 3, h * 3);
-      // Side tints keep the left/right reading even on a neutral tile.
-      const left = c.createRadialGradient(layout.player.x, layout.player.y, 0, layout.player.x, layout.player.y, layout.radius * 3.2);
-      left.addColorStop(0, rgba(this._palette.accent, 0.16));
-      left.addColorStop(1, rgba(this._palette.accent, 0));
-      c.fillStyle = left;
-      c.fillRect(0, 0, w, h);
-      const right = c.createRadialGradient(layout.target.x, layout.target.y, 0, layout.target.x, layout.target.y, layout.radius * 3.2);
-      right.addColorStop(0, rgba(this._palette.danger, 0.14));
-      right.addColorStop(1, rgba(this._palette.danger, 0));
-      c.fillStyle = right;
-      c.fillRect(0, 0, w, h);
+      c.fillRect(-pad, -pad, w + pad * 2, h + pad * 2);
+      c.restore();
     },
 
     _drawGround(c, layout, tokens) {
