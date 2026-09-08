@@ -39,6 +39,7 @@
   import { normalizeMapZoom } from "../../public/js/map-zoom.js";
   import type {
     CompositeWorkspaceSnapshot,
+    PanelPlacement,
     PersistedWorkspaceSnapshot,
     Workspace,
     WorkspacePanelSpec,
@@ -1349,6 +1350,17 @@
       }
       if (hasTransientPanels()) cancelPendingSave();
     };
+    // Where a new fight opens. Under Room Image when that panel is open in the
+    // grid, so the Enemy panel never lands on top of the terminal; otherwise
+    // split to the right of the terminal as before.
+    const combatPlacement = (): PanelPlacement => {
+      const anchor = "roomImage";
+      const anchored =
+        currentWorkspace.hasPanel(anchor) && !currentWorkspace.inspectPanel(anchor)?.floating;
+      return anchored
+        ? { kind: "grid", direction: "below", referencePanelId: anchor }
+        : { kind: "grid", direction: "right", referencePanelId: terminal.id };
+    };
     const syncCombatPanel = (next: typeof combatSnapshot) => {
       combatSnapshot = next;
       if (presentationAllowed && next.shouldPresent) {
@@ -1358,27 +1370,8 @@
         seenCombatEncounter = encounter;
         if (reveal) {
           const focused = document.activeElement;
-          const width = Math.min(580, host.clientWidth || innerWidth);
-          const height = Math.min(465, host.clientHeight || innerHeight);
-          currentWorkspace.addOrUpdatePanel({
-            ...combatPanel,
-            placement:
-              innerWidth <= 700
-                ? { kind: "grid", direction: "right", referencePanelId: terminal.id }
-                : {
-                    kind: "floating",
-                    bounds: {
-                      left: Math.max(0, Math.round(((host.clientWidth || innerWidth) - width) / 2)),
-                      top: Math.max(
-                        0,
-                        Math.round(((host.clientHeight || innerHeight) - height) / 2),
-                      ),
-                      width,
-                      height,
-                    },
-                  },
-          });
           if (exists) currentWorkspace.activatePanel(combatPanel.id);
+          else currentWorkspace.addOrUpdatePanel({ ...combatPanel, placement: combatPlacement() });
           const restoreFocus = () => {
             if (focused instanceof HTMLElement && focused.isConnected) {
               focused.focus({ preventScroll: true });
