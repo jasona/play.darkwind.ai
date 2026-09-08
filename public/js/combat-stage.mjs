@@ -13,6 +13,8 @@
 import {
   buildAction,
   computeStageLayout,
+  sceneLayout,
+  targetEntrance,
   idleOffset,
   resolveStageBackdrop,
   sampleAction,
@@ -133,6 +135,12 @@ export function createCombatStage(doc, options = {}) {
     _view: null,
     _reducedMotion: false,
     _backdrop: resolveStageBackdrop(null),
+    // Scene mode: no fight is being presented, so the player stands alone.
+    // `_presence` is how far the opponent is onto the stage (0..1); it eases
+    // toward 1 when a fight starts and back to 0 when it ends.
+    _sceneIdle: true,
+    _presence: 0,
+    _presenceClockAt: 0,
     _palette: {
       accent: readCssVar(doc, '--df-accent', '#42d6c9'),
       danger: readCssVar(doc, '--df-err', '#f85149'),
@@ -148,6 +156,10 @@ export function createCombatStage(doc, options = {}) {
     _secondaryState: null,
     _lightDir: 1,
     frames: 0,
+    // The scene state, for diagnostics and tests.
+    get scene() {
+      return { idle: this._sceneIdle, presence: this._presence };
+    },
 
     update(view, sources = {}) {
       if (this.destroyed || !view) return;
@@ -159,6 +171,8 @@ export function createCombatStage(doc, options = {}) {
       }
       this._view = view;
       this._reducedMotion = !!view.reducedMotion;
+      const scene = sources.scene && typeof sources.scene === 'object' ? sources.scene : {};
+      this._sceneIdle = scene.idle !== undefined ? !!scene.idle : !view.active;
       this._backdrop = resolveStageBackdrop(sources.room, sources.roomImage);
       // The room's art is the backdrop when it loads; the terrain tile stands
       // in until then and takes over for good if the art fails.
@@ -320,17 +334,39 @@ export function createCombatStage(doc, options = {}) {
       const frameTime = Number.isFinite(timestamp) ? timestamp : now();
       const t = this._reducedMotion ? frameTime : this._applyHitStop(frameTime);
       this._lastFrameAt = t;
+      const settled = this._advancePresence(frameTime);
       this._actions = this._actions.filter((action) => t - action.startedAt < action.duration);
       this._draw(t);
       this.frames++;
       const view = this._view;
+      // Idle scenes settle to a still frame; the loop only runs while a fight
+      // is on, an action is playing, or the opponent is entering or leaving.
       const keepGoing = this._actions.length > 0
-        || (view && view.active && !this._reducedMotion);
+        || !settled
+        || (view && view.active && !this._sceneIdle && !this._reducedMotion);
       if (keepGoing) {
         this._rafId = raf((next) => this._tick(next));
       } else {
         this.running = false;
       }
+    },
+
+    // Moves the opponent's presence toward where the scene wants it, on the
+    // real clock so a hit-stop never freezes an entrance. Returns true once
+    // it has arrived.
+    _advancePresence(frameTime) {
+      const want = this._sceneIdle ? 0 : 1;
+      const last = this._presenceClockAt || frameTime;
+      this._presenceClockAt = frameTime;
+      if (this._reducedMotion) {
+        this._presence = want;
+        return true;
+      }
+      const dt = Math.max(0, Math.min(100, frameTime - last));
+      const step = dt / (want ? 560 : 420);
+      const delta = want - this._presence;
+      this._presence = Math.abs(delta) <= step ? want : this._presence + Math.sign(delta) * step;
+      return this._presence === want;
     },
 
     // Returns the effective animation time. While a hit-stop is active the
@@ -359,7 +395,7 @@ export function createCombatStage(doc, options = {}) {
       this._resize();
       const w = this._width;
       const h = this._height;
-      const layout = computeStageLayout(w, h);
+      const layout = sceneLayout(computeStageLayout(w, h), this._presence);
       const view = this._view;
       const reduced = this._reducedMotion;
       const samples = this._actions.map((action) => ({
@@ -397,7 +433,7 @@ export function createCombatStage(doc, options = {}) {
         c.fillStyle = gradient;
         c.fillRect(0, 0, w, h);
       }
-      if (view && !view.effective) {
+      if (view && !view.effective && !this._sceneIdle) {
         c.fillStyle = 'rgba(3, 7, 11, 0.32)';
         c.fillRect(0, 0, w, h);
       }
@@ -420,6 +456,12 @@ export function createCombatStage(doc, options = {}) {
           scale *= offset.scale;
           alpha = Math.min(alpha, offset.alpha);
           flashAmount = Math.max(flashAmount, offset.flash);
+        }
+        if (side === 'target') {
+          const entrance = targetEntrance(this._presence, this._reducedMotion);
+          y += entrance.y;
+          scale *= entrance.scale;
+          alpha *= entrance.alpha;
         }
         positions[side] = {
           x: base.x + x * layout.radius,
@@ -553,6 +595,13 @@ export function createCombatStage(doc, options = {}) {
       const sprite = this._sprites
         ? this._sprites.pick(spriteKeysFor({ ...combatant, observed: !!(this._view && this._view.observer) }, figure, side))
         : null;
+      // An opponent that has not entered the scene (or has left it) is not
+      // drawn. Its sheet was still picked above, so it is loading by the time
+      // the token lands.
+      if (!(token.alpha > 0.002)) {
+        c.restore();
+        return;
+      }
       const weaponsInArt = !!(sprite && sprite.sheet.weaponsInArt);
       let head = geo.head;
       if (sprite) {

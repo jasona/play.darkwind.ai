@@ -1262,3 +1262,30 @@
   flex-direction: column;
   min-height: 0;
 }
+
+/* Between fights the panel is a scene: the player alone in the room. The
+   opponent's HUD is not rendered then, and the room's name takes the place
+   of the exchange line. */
+[data-panel-id="enemy"] .combat-scene-room {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--df-border);
+  border-bottom: 1px solid var(--df-border);
+  background: rgba(8, 13, 20, 0.78);
+  color: var(--df-text);
+  font-size: calc(12px * var(--pane-font-scale, 1));
+}
+
+[data-panel-id="enemy"] .combat-scene-room-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

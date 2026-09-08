@@ -80,6 +80,10 @@
             avatar: snapshot.avatar,
             status: snapshot.status,
             inventory: snapshot.inventory,
+            // Off while the server has visual combat disabled or the player
+            // dismissed this encounter: the stage then shows the room scene
+            // instead of the fight.
+            present: snapshot.shouldPresent,
             // The stage paints the room's image as the backdrop when one is
             // showing, and the terrain tile otherwise.
             room: world.room,

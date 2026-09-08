@@ -18,8 +18,17 @@
 // stage uses for the player token: `status` (Char.Status, for the race,
 // guild, and gender descriptor and the bundled portrait), `inventory`
 // (Char.Items, for the wielded and worn equipment), `room` (Room.Info, for
-// the terrain backdrop), and `roomImage` (the Darkwind.Room.Image URL, drawn
-// as the backdrop ahead of the terrain tile). All four are optional.
+// the terrain backdrop and, between fights, the room's name), and `roomImage`
+// (the Darkwind.Room.Image URL, drawn as the backdrop ahead of the terrain
+// tile). All four are optional. `present` (the session's shouldPresent) is
+// false when the fight is not to be shown: the server has visual combat off
+// or the player dismissed this encounter.
+//
+// The panel is persistent, so the renderer has two modes. While a fight is
+// presented it is the duel: both tokens, both HUDs, the exchange line. At any
+// other time it is the scene: the player alone in the room, with the room's
+// name in place of the exchange and the opponent's HUD gone. The opponent's
+// token pops onto the stage when a fight begins and leaves when it ends.
 
 import { buildCombatView } from './combat-visual-core.mjs';
 import { createCombatStage, isCanvasStageSupported } from './combat-stage.mjs';
@@ -32,7 +41,7 @@ import {
 import { escHtml, formatInt } from './core-information-panel-renderers.mjs';
 import { NPC_FALLBACK_IMAGE, PLAYER_FALLBACK_IMAGE } from './image-fallbacks.js';
 
-function eventClasses(view, event) {
+function eventClasses(view, event, idle) {
   // Perspective is the recipient-safe source of truth. Keep the actor IDs for
   // observed combat, but never let an older/mixed server omit the player-side
   // impact treatment from an explicitly incoming event.
@@ -51,7 +60,9 @@ function eventClasses(view, event) {
     : (targetImpact ? ' combat-impact-opponent' : '');
   return {
     rootClass: 'combat-visual' + resultClass + perspectiveClass + impactSideClass +
-      (view.effective ? ' combat-visual-effective' : ' combat-visual-syncing') +
+      (idle
+        ? ' combat-scene-idle'
+        : (view.effective ? ' combat-visual-effective' : ' combat-visual-syncing')) +
       (view.reducedMotion ? ' combat-visual-reduced' : ''),
     playerClass: (playerImpact ? ' is-impact-target' : '') +
       (playerActor ? ' is-event-actor' : ''),
@@ -76,17 +87,24 @@ function tokenHudHtml(side, combatant, sideClass) {
 }
 
 // Everything below the stage: current exchange, threats, history, outcome,
-// and the live region.
-function hudHtml(view, event, label, announcement) {
-  let html = '<div class="combat-current-event combat-current-' +
-    escHtml(event ? event.result : 'waiting') + '"><span class="combat-event-glyph" aria-hidden="true"></span>' +
-    '<span class="combat-event-copy"><strong>' + escHtml(label) + '</strong>';
-  if (event && event.summary) {
-    html += '<span class="combat-event-summary">' + escHtml(event.summary) + '</span>';
+// and the live region. Between fights the exchange line becomes the room's
+// name and there are no threats to list.
+function hudHtml(view, event, label, announcement, scene) {
+  let html = '';
+  if (scene.idle) {
+    html += '<div class="combat-scene-room"><span class="combat-section-label">Scene</span>' +
+      '<span class="combat-scene-room-name">' + escHtml(scene.roomName || 'Darkwind') + '</span></div>';
+  } else {
+    html += '<div class="combat-current-event combat-current-' +
+      escHtml(event ? event.result : 'waiting') + '"><span class="combat-event-glyph" aria-hidden="true"></span>' +
+      '<span class="combat-event-copy"><strong>' + escHtml(label) + '</strong>';
+    if (event && event.summary) {
+      html += '<span class="combat-event-summary">' + escHtml(event.summary) + '</span>';
+    }
+    html += '</span></div>';
   }
-  html += '</span></div>';
 
-  if (view.threats.length || view.hiddenThreatCount) {
+  if (!scene.idle && (view.threats.length || view.hiddenThreatCount)) {
     html += '<div class="combat-threats" aria-label="Additional combat threats"><span class="combat-section-label">Threats</span>';
     for (const threat of view.threats) {
       html += '<span class="combat-threat-chip">' + escHtml(threat.name) + '</span>';
@@ -115,7 +133,7 @@ function hudHtml(view, event, label, announcement) {
   if (!view.active && view.outcome) {
     html += '<div class="combat-outcome combat-outcome-' + escHtml(view.outcome) + '">' +
       escHtml(view.summary || view.outcome) + '</div>';
-  } else if (!view.effective) {
+  } else if (!view.effective && !scene.idle) {
     html += '<div class="combat-sync-state">' +
       'Visual combat is synchronizing; text fallback remains active</div>';
   }
@@ -210,7 +228,11 @@ export function createCombatStageRenderer(bodyEl, options = {}) {
       inventory: data.inventory,
     });
     const event = view.event;
-    const classes = eventClasses(view, event);
+    const scene = {
+      idle: !view.active || !view.visualEnabled || data.present === false,
+      roomName: data.room && typeof data.room.name === 'string' ? data.room.name.trim() : '',
+    };
+    const classes = eventClasses(view, event, scene.idle);
     const label = eventLabel(event);
     const announcement = nextAnnouncement(view, event, label);
 
@@ -218,9 +240,10 @@ export function createCombatStageRenderer(bodyEl, options = {}) {
     host.root.setAttribute('data-encounter-id', view.encounterId || '');
     host.overlay.innerHTML =
       tokenHudHtml('player', view.player, classes.playerClass) +
-      tokenHudHtml('target', view.target, classes.targetClass);
-    host.hud.innerHTML = hudHtml(view, event, label, announcement);
+      (scene.idle ? '' : tokenHudHtml('target', view.target, classes.targetClass));
+    host.hud.innerHTML = hudHtml(view, event, label, announcement, scene);
     host.stage.update(view, {
+      scene,
       room: data.room || null,
       roomImage: data.roomImage || null,
       playerFallback: [view.player.fallbackImage, PLAYER_FALLBACK_IMAGE].filter(Boolean),

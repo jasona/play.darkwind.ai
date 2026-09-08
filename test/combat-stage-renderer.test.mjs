@@ -552,3 +552,66 @@ test('a room image becomes the stage backdrop and the terrain tile is its fallba
   runFrame(8000);
   assert.ok(canvas.drawLog.some(([name]) => name === 'fillRect'), 'the backdrop still paints without art');
 });
+
+test('between fights the stage is a scene: the player alone in the room, and the opponent pops in when a fight starts', () => {
+  const body = bodyElement();
+  const renderer = mountRenderer(body);
+  const room = { name: 'The Dusty Crossroads', terrain: 'forest' };
+  const enemy = { enemy_name: 'a drake', enemy_curhp: 40, enemy_maxhp: 50, enemy_is_npc: 1 };
+  assert.equal(renderer.render({
+    model: createCombatVisualState(),
+    vitals: { hp: 60, maxhp: 100 },
+    avatar: { name: 'Acer' },
+    room,
+  }), true, 'an empty model still renders the scene');
+  const root = body.children[0];
+  assert.match(root.className, /combat-scene-idle/);
+  assert.doesNotMatch(root.className, /combat-visual-syncing/, 'an idle scene is not "synchronizing"');
+  let html = deepHtml(body);
+  assert.match(html, /combat-scene-room-name">The Dusty Crossroads</);
+  assert.match(html, /combat-token-hud-player/);
+  assert.match(html, /aria-valuenow="60"/, 'the player keeps a health bar');
+  assert.doesNotMatch(html, /combat-token-hud-target/, 'no opponent HUD between fights');
+  assert.doesNotMatch(html, /combat-current-event/);
+  assert.doesNotMatch(html, /combat-sync-state/);
+  assert.deepEqual(renderer.stage.scene, { idle: true, presence: 0 });
+  runFrame(500);
+  assert.equal(renderer.stage.running, false, 'an idle scene settles to a still frame');
+
+  // A fight begins: the duel HUD returns and the opponent enters over a few frames.
+  renderer.render({ model: combatModel(), vitals: { hp: 60, maxhp: 100 }, enemy, avatar: { name: 'Acer' }, room, present: true });
+  assert.doesNotMatch(body.children[0].className, /combat-scene-idle/);
+  html = deepHtml(body);
+  assert.match(html, /combat-token-hud-target/);
+  assert.match(html, /combat-current-event/);
+  assert.doesNotMatch(html, /combat-scene-room/);
+  assert.equal(renderer.stage.scene.idle, false);
+  runFrame(1000);
+  runFrame(1100);
+  const partway = renderer.stage.scene.presence;
+  assert.ok(partway > 0 && partway < 1, 'the opponent is still entering: ' + partway);
+  for (let t = 1200; t <= 2200; t += 100) runFrame(t);
+  assert.equal(renderer.stage.scene.presence, 1, 'fully on stage');
+
+  // The player dismisses the fight: the panel stays, the opponent leaves.
+  renderer.render({ model: combatModel(), vitals: { hp: 60, maxhp: 100 }, enemy, avatar: { name: 'Acer' }, room, present: false });
+  assert.match(body.children[0].className, /combat-scene-idle/);
+  assert.doesNotMatch(deepHtml(body), /combat-token-hud-target/);
+  for (let t = 2300; t <= 3300; t += 100) runFrame(t);
+  assert.deepEqual(renderer.stage.scene, { idle: true, presence: 0 });
+
+  // A fight that ends leaves its outcome under the scene.
+  renderer.render({
+    model: combatModel({ active: 0, outcome: 'victory', summary: 'Victory.' }),
+    vitals: { hp: 60, maxhp: 100 },
+    enemy,
+    avatar: { name: 'Acer' },
+    room,
+    present: false,
+  });
+  html = deepHtml(body);
+  assert.match(body.children[0].className, /combat-scene-idle/);
+  assert.match(html, /combat-scene-room-name">The Dusty Crossroads</);
+  assert.match(html, /combat-outcome combat-outcome-victory">Victory\./);
+  assert.doesNotMatch(html, /combat-token-hud-target/);
+});

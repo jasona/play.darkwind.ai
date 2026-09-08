@@ -163,14 +163,18 @@ pane during an encounter and as part of a full handshake/subscription refresh.
 
 ## Pane And Accessibility Behavior
 
-The existing `enemy` panel id is retained. When visual combat is inactive it
-uses the compact Enemy renderer; an active visual State changes its title and
-renderer to Combat. On desktop, each encounter takes over that pane as an
-expanded, centered floating window and keeps it above the other workspace
-panes without stealing command focus. On mobile, it opens as the active Combat
-sheet. The pane is hidden as soon as the encounter ends. Closing or collapsing
-it during combat restores server text fallback without changing the saved
-character preference.
+The existing `enemy` panel id is retained; the panel is titled Scene. It is a
+persistent workspace panel (World group of the Panels menu) that shows the
+player's figure in the current room, with the room's image as the backdrop
+when the server has sent one. An active visual State turns it into the duel:
+the opponent's token pops onto the stage with its name and health, and the
+exchange line, threats, and history appear below. When the encounter ends the
+opponent leaves the stage, the outcome lingers under the scene, and the panel
+stays open for the next fight. A fight opens the panel if it is closed, under
+Room Image when that panel is in the grid and to the right of the terminal
+otherwise, without stealing command focus. Closing it during combat restores
+server text fallback without changing the saved character preference; closing
+it between fights simply hides the scene.
 
 Both health bars expose progressbar semantics. Server-provided summaries feed
 a rate-limited polite live region. Reduced-motion mode removes lunges, shakes,

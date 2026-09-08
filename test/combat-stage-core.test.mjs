@@ -11,6 +11,8 @@ const {
   resolveActionSides,
   resolveStageBackdrop,
   sampleAction,
+  sceneLayout,
+  targetEntrance,
 } = await import('../public/js/combat-stage-core.mjs');
 
 const view = {
@@ -192,4 +194,29 @@ test('a room image rides ahead of the terrain tile as the backdrop', () => {
   assert.equal(resolveStageBackdrop({ terrain: 'forest' }, 'javascript:alert(1)').image, '', 'only http(s) or root-relative addresses are drawn');
   assert.equal(resolveStageBackdrop({ terrain: 'forest' }, { url: 42 }).image, '');
   assert.equal(resolveStageBackdrop(null, null).image, '');
+});
+
+test('the scene layout centres a lone player and steps them left as the opponent arrives', () => {
+  const layout = computeStageLayout(1000, 400);
+  const solo = sceneLayout(layout, 0);
+  assert.equal(solo.player.x, 500, 'alone, the player stands centre stage');
+  assert.equal(solo.player.y, layout.player.y);
+  assert.deepEqual(solo.target, layout.target, 'the opponent slot does not move');
+  const duel = sceneLayout(layout, 1);
+  assert.equal(duel.player.x, layout.player.x, 'a present opponent puts the player in the duel position');
+  const mid = sceneLayout(layout, 0.5);
+  assert.ok(mid.player.x > layout.player.x && mid.player.x < 500, 'the step is gradual');
+  assert.equal(sceneLayout(layout, 7).duel, 1, 'presence is clamped');
+  assert.equal(sceneLayout(layout, NaN).player.x, 500);
+});
+
+test('the opponent drops in from above and fades up to full presence', () => {
+  assert.deepEqual(targetEntrance(0, false), { alpha: 0, y: -1.4, scale: 0.86 });
+  const half = targetEntrance(0.5, false);
+  assert.ok(half.alpha > 0 && half.alpha <= 1);
+  assert.ok(half.y < 0 && half.y > -1.4, 'still above the ground line');
+  assert.ok(half.scale > 0.86 && half.scale < 1);
+  assert.deepEqual(targetEntrance(1, false), { alpha: 1, y: 0, scale: 1 });
+  assert.deepEqual(targetEntrance(0.3, true), { alpha: 1, y: 0, scale: 1 }, 'reduced motion cuts straight in');
+  assert.deepEqual(targetEntrance(0, true), { alpha: 0, y: 0, scale: 1 });
 });

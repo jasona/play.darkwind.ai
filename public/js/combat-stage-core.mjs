@@ -82,6 +82,35 @@ export function computeStageLayout(width, height) {
   };
 }
 
+// The stage is a scene between fights: the player alone in the room. With no
+// opponent present the player stands at the centre; as one arrives the player
+// steps to the duel position on the left. `duel` is the opponent's presence,
+// 0 (absent) to 1 (fully on stage), and the shift follows it smoothly.
+export function sceneLayout(layout, duel) {
+  const k = Math.max(0, Math.min(1, Number(duel) || 0));
+  const eased = k * k * (3 - 2 * k);
+  const soloX = layout.width * 0.5;
+  return {
+    ...layout,
+    duel: k,
+    player: { ...layout.player, x: soloX + (layout.player.x - soloX) * eased },
+  };
+}
+
+// How the opponent's token looks partway through its entrance (or exit):
+// it drops in from above, growing and fading up to full presence. Reduced
+// motion cuts straight between absent and present.
+export function targetEntrance(presence, reducedMotion) {
+  const p = Math.max(0, Math.min(1, Number(presence) || 0));
+  if (reducedMotion) return { alpha: p > 0 ? 1 : 0, y: 0, scale: 1 };
+  const eased = 1 - Math.pow(1 - p, 3);
+  return {
+    alpha: Math.min(1, p * 1.6),
+    y: -(1 - eased) * 1.4 || 0,
+    scale: 0.86 + 0.14 * eased,
+  };
+}
+
 // A room image URL is only ever drawn, never read back, so the stage accepts
 // any http(s) or root-relative address and lets the image element decide.
 function stageImageUrl(value) {
