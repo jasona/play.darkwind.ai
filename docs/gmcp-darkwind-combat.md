@@ -176,6 +176,15 @@ otherwise, without stealing command focus. Closing it during combat restores
 server text fallback without changing the saved character preference; closing
 it between fights simply hides the scene.
 
+Between fights the scene also acts out what the player does: a `look` (or
+`l`, `glance`) command makes the figure glance left and right and shade its
+eyes, and a room change walks the figure in from the edge of the stage, facing
+the way it travelled. The direction comes from the movement command the player
+sent just before the room changed, or failing that from the previous room's
+exits; westward and downward travel enters from stage right, everything else
+from stage left. These play only on the idle scene and never during a fight,
+and reduced motion suppresses them.
+
 Both health bars expose progressbar semantics. Server-provided summaries feed
 a rate-limited polite live region. Reduced-motion mode removes lunges, shakes,
 flashes, moving damage numbers, and crossfades while preserving static outcome

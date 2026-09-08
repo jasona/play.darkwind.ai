@@ -111,6 +111,75 @@ export function targetEntrance(presence, reducedMotion) {
   };
 }
 
+// Scene activities are short animations the player's figure plays between
+// fights, driven by what the player does in the world: a look glances left
+// and right and shades the eyes; a walk carries the figure in from the edge
+// of the stage when the room changes, facing the way it travelled.
+export const SCENE_ACTION_MS = Object.freeze({ look: 1500, walk: 900 });
+
+export function buildSceneAction(activity, startedAt) {
+  const kind = activity && typeof activity === 'object' ? String(activity.kind || '') : '';
+  const duration = SCENE_ACTION_MS[kind];
+  if (!duration) return null;
+  return {
+    kind,
+    facing: Number(activity.facing) < 0 ? -1 : 1,
+    seq: Number.isFinite(Number(activity.seq)) ? Number(activity.seq) : 0,
+    startedAt: Number(startedAt) || 0,
+    duration,
+  };
+}
+
+const SCENE_REST = Object.freeze({ x: 0, y: 0, alpha: 1, facing: 0, phase: null });
+
+// A half-sine hop of `height` spanning [at, at + width] of the progress.
+function hop(progress, at, width, height) {
+  const k = (progress - at) / width;
+  if (k <= 0 || k >= 1) return 0;
+  return Math.sin(k * Math.PI) * height;
+}
+
+// The figure's offsets (in stage radii), facing (0 keeps the default), and
+// rig pose phase at time t. Reduced motion holds the figure still for the
+// action's duration so the scene never jumps.
+export function sampleSceneAction(action, t, options = {}) {
+  const elapsed = t - action.startedAt;
+  const progress = Math.max(0, Math.min(1, elapsed / action.duration));
+  const done = elapsed >= action.duration;
+  const base = { ...SCENE_REST, kind: action.kind, progress, active: !done };
+  if (options.reducedMotion || done) return base;
+  if (action.kind === 'look') {
+    // Turn to glance left, hold, turn back, then shade the eyes for a beat.
+    const facing = progress < 0.16 ? 0 : (progress < 0.5 ? -1 : 1);
+    const y = hop(progress, 0.16, 0.14, 0.04) + hop(progress, 0.5, 0.14, 0.04);
+    const shade = progress >= 0.56 ? Math.min(1, (progress - 0.56) / 0.12) : 0;
+    const settle = progress >= 0.86 ? (progress - 0.86) / 0.14 : 0;
+    let phase = null;
+    if (settle > 0) phase = { from: 'look', to: 'idle', t: settle, ease: 'settle' };
+    else if (shade > 0) phase = { from: 'idle', to: 'look', t: shade, ease: 'settle' };
+    return { ...base, y, facing, phase };
+  }
+  // A walk: enter from the edge opposite the facing, striding, then settle.
+  const dir = action.facing;
+  const arrive = Math.min(1, progress / 0.82);
+  const remaining = Math.pow(1 - arrive, 3);
+  const settling = progress >= 0.82 ? (progress - 0.82) / 0.18 : 0;
+  const stride = Math.abs(Math.sin(progress * Math.PI * 4)) * (1 - settling);
+  const cycle = (progress * 4) % 1;
+  let phase;
+  if (settling > 0) phase = { from: 'stepA', to: 'idle', t: settling, ease: 'settle' };
+  else if (cycle < 0.5) phase = { from: 'stepA', to: 'stepB', t: cycle * 2, ease: 'settle' };
+  else phase = { from: 'stepB', to: 'stepA', t: (cycle - 0.5) * 2, ease: 'settle' };
+  return {
+    ...base,
+    x: -dir * 1.9 * remaining,
+    y: stride * 0.05,
+    alpha: Math.min(1, progress / 0.2),
+    facing: dir,
+    phase,
+  };
+}
+
 // A room image URL is only ever drawn, never read back, so the stage accepts
 // any http(s) or root-relative address and lets the image element decide.
 function stageImageUrl(value) {

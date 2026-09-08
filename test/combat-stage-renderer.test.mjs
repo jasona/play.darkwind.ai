@@ -615,3 +615,39 @@ test('between fights the stage is a scene: the player alone in the room, and the
   assert.match(html, /combat-outcome combat-outcome-victory">Victory\./);
   assert.doesNotMatch(html, /combat-token-hud-target/);
 });
+
+test('the idle scene acts out looks and walks from the activity feed, but a fight does not', () => {
+  const body = bodyElement();
+  const renderer = mountRenderer(body);
+  const vitals = { hp: 60, maxhp: 100 };
+  const room = { name: 'The Long Road', terrain: 'forest' };
+  renderer.render({ model: createCombatVisualState(), vitals, avatar: { name: 'Acer' }, room });
+  runFrame(100);
+  assert.equal(renderer.stage.running, false);
+
+  assert.equal(renderer.playActivity({ kind: 'walk', facing: -1, seq: 1 }), true, 'the idle scene takes a walk');
+  assert.equal(renderer.stage.running, true, 'and starts animating');
+  runFrame(200);
+  runFrame(400);
+  const canvas = findCanvas(body);
+  assert.ok(canvas.drawLog.length > 0, 'frames draw while the walk plays');
+  assert.equal(renderer.stage._sceneActions.length, 1);
+  assert.equal(renderer.playActivity({ kind: 'look', seq: 2 }), true, 'a new activity replaces the one in progress');
+  assert.equal(renderer.stage._sceneActions[0].kind, 'look');
+  // The stage clock is pinned at 1000 in this harness, so the look ends at 2500.
+  for (let t = 500; t <= 2600; t += 100) runFrame(t);
+  assert.equal(renderer.stage._sceneActions.length, 0, 'the look has played out');
+  assert.equal(renderer.stage.running, false, 'and the scene is still again');
+  assert.equal(renderer.playActivity({ kind: 'dance', seq: 3 }), false, 'unknown activities are ignored');
+
+  renderer.render({
+    model: combatModel(),
+    vitals,
+    enemy: { enemy_name: 'a drake', enemy_curhp: 40, enemy_maxhp: 50, enemy_is_npc: 1 },
+    avatar: { name: 'Acer' },
+    room,
+    present: true,
+  });
+  assert.equal(renderer.playActivity({ kind: 'look', seq: 4 }), false, 'a fight owns the figure');
+  assert.equal(renderer.stage._sceneActions.length, 0);
+});

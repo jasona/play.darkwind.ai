@@ -103,6 +103,15 @@
     const sizeObserver = new ResizeObserver(syncReadiness);
     sizeObserver.observe(root);
     const unsubscribe = activeSession.combat.subscribe(render);
+    // Looks and walks from the activity feed play on the idle scene. The
+    // subscription replays the current snapshot on attach, which is skipped
+    // so a remounted panel does not re-enact an old walk.
+    let seenActivitySeq = activeSession.activity.getSnapshot().seq;
+    const unsubscribeActivity = activeSession.activity.subscribe((activity) => {
+      if (activity.seq === seenActivitySeq || !activity.latest) return;
+      seenActivitySeq = activity.seq;
+      renderer.playActivity(activity.latest);
+    });
     let lastBackdropKey = backdropKey(activeSession.world.getSnapshot());
     const unsubscribeWorld = activeSession.world.subscribe((world) => {
       const key = backdropKey(world);
@@ -112,6 +121,7 @@
     });
     return () => {
       unsubscribe();
+      unsubscribeActivity();
       unsubscribeWorld();
       sizeObserver.disconnect();
       motionQuery.removeEventListener("change", syncReducedMotion);

@@ -438,6 +438,12 @@ export function createSessionTransport(
         health.noteOutboundActivity(kind, { ...metadata, size }, liveSocket);
         liveSocket.send(payload);
         health.recordBufferedAmount(liveSocket);
+        // Every command the player sends, after aliases and automation, so
+        // session runtimes can react to what the player is doing without
+        // owning the input path.
+        if (kind === "command" && typeof payload === "string") {
+          eventBus.publish("transport:outbound-command", { text: payload });
+        }
         return true;
       } catch (error) {
         health.lastErrorAt = now();

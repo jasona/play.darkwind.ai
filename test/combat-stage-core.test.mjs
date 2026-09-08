@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 const {
   ACTION_DURATION_MS,
   buildAction,
+  buildSceneAction,
   computeStageLayout,
   createSeededRandom,
   idleOffset,
@@ -11,6 +12,7 @@ const {
   resolveActionSides,
   resolveStageBackdrop,
   sampleAction,
+  sampleSceneAction,
   sceneLayout,
   targetEntrance,
 } = await import('../public/js/combat-stage-core.mjs');
@@ -219,4 +221,48 @@ test('the opponent drops in from above and fades up to full presence', () => {
   assert.deepEqual(targetEntrance(1, false), { alpha: 1, y: 0, scale: 1 });
   assert.deepEqual(targetEntrance(0.3, true), { alpha: 1, y: 0, scale: 1 }, 'reduced motion cuts straight in');
   assert.deepEqual(targetEntrance(0, true), { alpha: 0, y: 0, scale: 1 });
+});
+
+test('a look glances left, turns back, and shades the eyes before settling', () => {
+  const action = buildSceneAction({ kind: 'look', seq: 3 }, 1000);
+  assert.equal(action.duration, 1500);
+  assert.equal(action.facing, 1);
+  const early = sampleSceneAction(action, 1000 + 1500 * 0.05);
+  assert.equal(early.facing, 0, 'the figure keeps its rest facing at first');
+  const glance = sampleSceneAction(action, 1000 + 1500 * 0.3);
+  assert.equal(glance.facing, -1, 'then turns to glance left');
+  assert.equal(glance.phase, null);
+  const shade = sampleSceneAction(action, 1000 + 1500 * 0.7);
+  assert.equal(shade.facing, 1);
+  assert.equal(shade.phase.to, 'look');
+  assert.equal(shade.phase.t, 1);
+  const settle = sampleSceneAction(action, 1000 + 1500 * 0.93);
+  assert.equal(settle.phase.from, 'look');
+  assert.equal(settle.phase.to, 'idle');
+  assert.ok(settle.active);
+  const done = sampleSceneAction(action, 2500);
+  assert.equal(done.active, false);
+  assert.deepEqual([done.x, done.y, done.alpha, done.facing, done.phase], [0, 0, 1, 0, null]);
+  assert.equal(sampleSceneAction(action, 1300, { reducedMotion: true }).facing, 0, 'reduced motion holds still');
+});
+
+test('a walk enters from the edge opposite its facing, striding, and settles at the rest spot', () => {
+  const west = buildSceneAction({ kind: 'walk', facing: -1 }, 0);
+  const start = sampleSceneAction(west, 0);
+  assert.ok(start.x > 1.5, 'a westward walk starts off stage right: ' + start.x);
+  assert.equal(start.alpha, 0);
+  assert.equal(start.facing, -1);
+  assert.equal(start.phase.from, 'stepA');
+  const mid = sampleSceneAction(west, 450);
+  assert.ok(mid.x > 0 && mid.x < start.x, 'still arriving');
+  assert.equal(mid.alpha, 1);
+  assert.ok(['stepA', 'stepB'].includes(mid.phase.from) && ['stepA', 'stepB'].includes(mid.phase.to));
+  const late = sampleSceneAction(west, 850);
+  assert.equal(late.x, 0, 'home before the settle finishes');
+  assert.equal(late.phase.to, 'idle');
+  const east = buildSceneAction({ kind: 'walk', facing: 1 }, 0);
+  assert.ok(sampleSceneAction(east, 0).x < -1.5, 'an eastward walk starts off stage left');
+  assert.equal(sampleSceneAction(east, 0).facing, 1);
+  assert.equal(buildSceneAction({ kind: 'dance' }, 0), null, 'unknown activities are ignored');
+  assert.equal(buildSceneAction(null, 0), null);
 });

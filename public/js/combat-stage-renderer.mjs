@@ -29,6 +29,10 @@
 // other time it is the scene: the player alone in the room, with the room's
 // name in place of the exchange and the opponent's HUD gone. The opponent's
 // token pops onto the stage when a fight begins and leaves when it ends.
+//
+// playActivity(activity) acts out a scene activity from the session's
+// activity feed (a look or a walk) on the player's figure while the scene is
+// idle; it is ignored during a fight.
 
 import { buildCombatView } from './combat-visual-core.mjs';
 import { createCombatStage, isCanvasStageSupported } from './combat-stage.mjs';
@@ -263,9 +267,15 @@ export function createCombatStageRenderer(bodyEl, options = {}) {
     announcementKey = '';
   }
 
+  function playActivity(activity) {
+    if (disposed || !hostAlive()) return false;
+    return host.stage.playScene(activity);
+  }
+
   return Object.freeze({
     render,
     dispose,
+    playActivity,
     // The live stage, for diagnostics and tests; null between mounts.
     get stage() {
       return hostAlive() ? host.stage : null;

@@ -209,6 +209,11 @@ export const POSES = Object.freeze({
   guard: pose({ lean: -0.12, rShoulder: 1.15, rElbow: -2.05, lShoulder: 1.05, lElbow: -2.0, weapon: 1.3, frontFootX: 0.08 }),
   raise: pose({ lean: -0.24, rShoulder: 3.5, rElbow: -0.35, lShoulder: 0.4, lElbow: -0.5, weapon: 0.2, rearFootX: -0.08 }),
   chop: pose({ lean: 0.5, hop: 0.04, rShoulder: 1.2, rElbow: 0.3, lShoulder: -0.5, lElbow: -0.3, weapon: -0.7, frontFootX: 0.55 }),
+  // Scene poses, played between fights: two opposite strides of a walk
+  // cycle, and a hand raised to shade the eyes while looking around.
+  stepA: pose({ lean: 0.08, hop: 0.02, rShoulder: -0.2, rElbow: -0.4, lShoulder: 0.45, lElbow: -0.5, frontFootX: 0.34, frontFootY: 0.05, rearFootX: -0.3 }),
+  stepB: pose({ lean: 0.08, hop: 0.02, rShoulder: 0.5, rElbow: -0.45, lShoulder: -0.3, lElbow: -0.35, frontFootX: -0.3, rearFootX: 0.34, rearFootY: 0.05 }),
+  look: pose({ lean: -0.04, headTilt: 0.22, rShoulder: 0.2, lShoulder: 2.7, lElbow: -1.35, frontFootX: 0.08 }),
 });
 
 export const STRIKE_POSE_BY_WEAPON = Object.freeze({

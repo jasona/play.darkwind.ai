@@ -28,6 +28,7 @@ import type { SessionIde } from "./ide";
 import type { SessionNotifications } from "./notifications";
 import type { SessionAudio } from "./audio";
 import type { SessionCombat } from "./combat";
+import type { SessionActivity } from "./activity";
 import type { SessionDps } from "./dps";
 import type { SessionTutorial } from "./tutorial";
 import type { SessionVisualEffects } from "./visual-effects";
@@ -101,6 +102,8 @@ export interface Session {
   readonly audio: SessionAudio;
   readonly combat: SessionCombat;
   readonly dps: SessionDps;
+  /** What the player is doing in the world, for the Scene panel's idle animations. */
+  readonly activity: SessionActivity;
   readonly tutorial: SessionTutorial;
   readonly visualEffects: SessionVisualEffects;
   readonly gmcpDiagnostics: SessionGmcpDiagnostics;
@@ -147,6 +150,7 @@ export interface SessionParts {
   audio: SessionAudio;
   combat: SessionCombat;
   dps: SessionDps;
+  activity: SessionActivity;
   tutorial: SessionTutorial;
   visualEffects: SessionVisualEffects;
   gmcpDiagnostics: SessionGmcpDiagnostics;
@@ -179,6 +183,7 @@ export function createSession(parts: SessionParts): Session {
     audio,
     combat,
     dps,
+    activity,
     tutorial,
     visualEffects,
     gmcpDiagnostics,
@@ -410,6 +415,7 @@ export function createSession(parts: SessionParts): Session {
     combat,
 
     dps,
+    activity,
 
     tutorial,
 

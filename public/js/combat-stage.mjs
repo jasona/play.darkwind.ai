@@ -13,6 +13,8 @@
 import {
   buildAction,
   computeStageLayout,
+  buildSceneAction,
+  sampleSceneAction,
   sceneLayout,
   targetEntrance,
   idleOffset,
@@ -141,6 +143,9 @@ export function createCombatStage(doc, options = {}) {
     _sceneIdle: true,
     _presence: 0,
     _presenceClockAt: 0,
+    // Idle-scene animations (look, walk) queued by playScene(); the newest
+    // one drives the player's figure.
+    _sceneActions: [],
     _palette: {
       accent: readCssVar(doc, '--df-accent', '#42d6c9'),
       danger: readCssVar(doc, '--df-err', '#f85149'),
@@ -173,6 +178,7 @@ export function createCombatStage(doc, options = {}) {
       this._reducedMotion = !!view.reducedMotion;
       const scene = sources.scene && typeof sources.scene === 'object' ? sources.scene : {};
       this._sceneIdle = scene.idle !== undefined ? !!scene.idle : !view.active;
+      if (!this._sceneIdle) this._sceneActions = [];
       this._backdrop = resolveStageBackdrop(sources.room, sources.roomImage);
       // The room's art is the backdrop when it loads; the terrain tile stands
       // in until then and takes over for good if the art fails.
@@ -200,6 +206,25 @@ export function createCombatStage(doc, options = {}) {
       }
       this._resize();
       this.start();
+    },
+
+    // Plays a scene activity ({ kind: 'look' | 'walk', facing, seq }) on the
+    // player's figure. Only the idle scene acts these out; during a fight the
+    // combat actions own the figure. A new activity replaces one in progress,
+    // so a speedwalk reads as one continuous stride rather than a pile-up.
+    playScene(activity) {
+      if (this.destroyed || !this._sceneIdle || this._reducedMotion) return false;
+      const action = buildSceneAction(activity, now());
+      if (!action) return false;
+      this._sceneActions = [action];
+      this.start();
+      return true;
+    },
+
+    _sceneSample(t) {
+      if (!this._sceneIdle || !this._sceneActions.length) return null;
+      const action = this._sceneActions[this._sceneActions.length - 1];
+      return sampleSceneAction(action, t, { reducedMotion: this._reducedMotion });
     },
 
     start() {
@@ -336,12 +361,14 @@ export function createCombatStage(doc, options = {}) {
       this._lastFrameAt = t;
       const settled = this._advancePresence(frameTime);
       this._actions = this._actions.filter((action) => t - action.startedAt < action.duration);
+      this._sceneActions = this._sceneActions.filter((action) => t - action.startedAt < action.duration);
       this._draw(t);
       this.frames++;
       const view = this._view;
       // Idle scenes settle to a still frame; the loop only runs while a fight
       // is on, an action is playing, or the opponent is entering or leaving.
       const keepGoing = this._actions.length > 0
+        || this._sceneActions.length > 0
         || !settled
         || (view && view.active && !this._sceneIdle && !this._reducedMotion);
       if (keepGoing) {
@@ -415,13 +442,14 @@ export function createCombatStage(doc, options = {}) {
       const shakeX = shake ? Math.sin(t / 19) * shake * layout.radius * 0.14 : 0;
       const shakeY = shake ? Math.cos(t / 23) * shake * layout.radius * 0.08 : 0;
 
+      const scene = this._sceneSample(t);
       c.save();
       c.translate(shakeX, shakeY);
       this._drawBackdrop(c, layout);
-      const tokens = this._tokenPositions(layout, samples, t);
+      const tokens = this._tokenPositions(layout, samples, t, scene);
       this._drawGround(c, layout, tokens);
       for (const sample of samples) this._drawBackEffects(c, layout, tokens, sample);
-      this._drawToken(c, layout, tokens.player, 'player', view.player, samples);
+      this._drawToken(c, layout, tokens.player, 'player', view.player, samples, scene);
       this._drawToken(c, layout, tokens.target, 'target', view.target, samples);
       for (const sample of samples) this._drawFrontEffects(c, layout, tokens, sample);
       c.restore();
@@ -439,7 +467,7 @@ export function createCombatStage(doc, options = {}) {
       }
     },
 
-    _tokenPositions(layout, samples, t) {
+    _tokenPositions(layout, samples, t, scene = null) {
       const positions = {};
       for (const side of ['player', 'target']) {
         const base = layout[side];
@@ -456,6 +484,11 @@ export function createCombatStage(doc, options = {}) {
           scale *= offset.scale;
           alpha = Math.min(alpha, offset.alpha);
           flashAmount = Math.max(flashAmount, offset.flash);
+        }
+        if (side === 'player' && scene) {
+          x += scene.x;
+          y += scene.y;
+          alpha *= scene.alpha;
         }
         if (side === 'target') {
           const entrance = targetEntrance(this._presence, this._reducedMotion);
@@ -541,8 +574,11 @@ export function createCombatStage(doc, options = {}) {
       c.restore();
     },
 
-    _drawToken(c, layout, token, side, combatant, samples) {
-      const figure = resolveFigure(combatant, side);
+    _drawToken(c, layout, token, side, combatant, samples, scene = null) {
+      const restFigure = resolveFigure(combatant, side);
+      // A scene activity can turn the figure around (a glance, or walking in
+      // from stage right); the sheet is mirrored along with the rig.
+      const figure = scene && scene.facing ? { ...restFigure, facing: scene.facing } : restFigure;
       const unit = layout.radius * FIGURE_UNIT_SCALE;
       // Lunge and knockback offsets move the body; vertical offsets lift its
       // ground line. Feet stay planted around the rest position.
@@ -574,6 +610,7 @@ export function createCombatStage(doc, options = {}) {
           }
         }
       }
+      if (!phase && scene && scene.phase) phase = scene.phase;
       const joints = resolvePose(phase, this._lastFrameAt, {
         reducedMotion: this._reducedMotion,
         phaseOffset: side === 'player' ? 0 : 2.1,
