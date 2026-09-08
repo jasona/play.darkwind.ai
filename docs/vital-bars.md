@@ -1,4 +1,4 @@
-# HP Bar and SP Bar panels
+# HP Bar, SP Bar, and Guild Resource panels
 
 The Vitals panel shows every bar the server sends (HP, SP, Move, Level, Carry)
 in one card. The HP Bar and SP Bar panels are free-standing copies of the two
@@ -20,10 +20,33 @@ Both read `Char.Vitals`. HP is `hp`/`maxhp` (or the legacy `mhp`); SP is
 `sp`/`maxsp`, falling back to the `mana` and `mp` spellings. A vital the server
 has not sent shows as `--` rather than as zero.
 
+## Guild Resource slots
+
+Guild resources (vitae, prowess, wrath, heat...) arrive in
+`Darkwind.GuildVitals` as items with a stable `id`, a display `label`, a
+`guild`, and a `kind`; the meter kinds (`meter`, `meter_reverse`, and the v1
+`warning`) are bars. The client knows no guild by name, so instead of one menu
+entry per guild there are three Guild Resource panels, each a slot:
+
+- By default slot N shows the Nth meter in the current guild vitals, using the
+  item's own label, so an alt in another guild sees that guild's resources
+  with no setup.
+- The gear in the panel's corner (visible on hover) lists the meters currently
+  on offer; picking one pins the slot to that item id. If the pinned item is
+  missing from a later snapshot the slot falls back to its positional default
+  and the tooltip says so. "Automatic" clears the pin.
+- Pins are a panel preference, saved per character in local storage under
+  `darkflow-guild-bars:<characterProfileId>` as `{ pins: { "1": "<id>" } }`,
+  like the Command Board's column count.
+- Reverse (danger-when-full) meters use the inverted colour scale and pulse at
+  85% or more; normal meters pulse at 30% or less. `street_samurai.heat` keeps
+  its heat ramp.
 ## Wiring
 
 `client/workspace/vital-bar.ts` is the pure part: which fields a bar reads and
 what it shows (`vitalReading`), plus the panel ids (`hpBar`, `spBar`).
-`VitalBarPanel.svelte` renders one bar from `session.information`; WorkspaceHost
+`VitalBarPanel.svelte` renders one bar from `session.information`, and
+`GuildBarPanel.svelte` one guild meter with its picker (`guildBarReading`,
+`guildMeters`, `loadGuildBarPins`, `saveGuildBarPin`); WorkspaceHost
 registers both panels, adds them to the Character menu group, the sheet, and
 the restore list, and places them when opened.

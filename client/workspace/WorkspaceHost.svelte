@@ -20,6 +20,7 @@
   import ConnectionHealthPanel from "./ConnectionHealthPanel.svelte";
   import CombatPanel from "./CombatPanel.svelte";
   import CommandBoardPanel from "./CommandBoardPanel.svelte";
+  import GuildBarPanel from "./GuildBarPanel.svelte";
   import VitalBarPanel from "./VitalBarPanel.svelte";
   import DpsPanel from "./DpsPanel.svelte";
   import FishingPanel from "./FishingPanel.svelte";
@@ -175,9 +176,18 @@
   // Single-bar vital readouts: floating, resizable copies of the HP and SP
   // rows of the Vitals panel, for players who want a big bar of their own
   // wherever they like. The ids are the ones vital-bar.ts knows.
+  // Guild Resource slots show a meter from Darkwind.GuildVitals by position
+  // (or a pinned id), so the menu never lists resources by guild.
   const vitalBarPanels: readonly WorkspacePanelSpec[] = [
     { id: "hpBar", kind: "hpBar", title: "HP Bar", state: {}, minSize: { width: 120, height: 40 } },
     { id: "spBar", kind: "spBar", title: "SP Bar", state: {}, minSize: { width: 120, height: 40 } },
+    ...[1, 2, 3].map((slot): WorkspacePanelSpec => ({
+      id: `guildBar${slot}`,
+      kind: "guildBar",
+      title: `Guild Resource ${slot}`,
+      state: {},
+      minSize: { width: 120, height: 40 },
+    })),
   ];
 
   type PanelMenuGroupName = "Character" | "Progress" | "Social" | "System" | "World";
@@ -973,6 +983,7 @@
       },
       hpBar: { canClose: () => true, component: VitalBarPanel, floatable: true, session },
       spBar: { canClose: () => true, component: VitalBarPanel, floatable: true, session },
+      guildBar: { canClose: () => true, component: GuildBarPanel, floatable: true, session },
       dps: {
         canClose: () => true,
         collapsible: true,
