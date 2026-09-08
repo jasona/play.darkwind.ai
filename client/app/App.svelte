@@ -226,7 +226,11 @@
   $effect(() => {
     session.setConnectionEndpoint(endpoint);
     const unsubscribe = session.subscribeConnection((next) => {
-      if (next.state === "connected" && snapshot.state !== "connected") {
+      // The subscription delivers the current snapshot synchronously, so this
+      // callback runs inside the effect. Reading snapshot here would make the
+      // effect depend on the state it writes and loop until Svelte aborts it.
+      const previous = untrack(() => snapshot);
+      if (next.state === "connected" && previous.state !== "connected") {
         saveLastLoginHost(localStorage, next.endpoint.host);
       }
       snapshot = next;
