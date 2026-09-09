@@ -2974,7 +2974,8 @@ body.zork-only-mode #panels-menu {
 
 /* Guild Resource slots: a vital bar with a dropdown for which meter it shows.
    The select hides in the corner until the pointer or focus reaches the panel. */
-.vital-bar-guild {
+.vital-bar-guild,
+.vital-bar-buff {
   position: relative;
 }
 .vital-bar-select {
@@ -3001,7 +3002,9 @@ body.zork-only-mode #panels-menu {
   transition: opacity 120ms ease;
 }
 .vital-bar-guild:hover .vital-bar-select,
-.vital-bar-guild:focus-within .vital-bar-select {
+.vital-bar-guild:focus-within .vital-bar-select,
+.vital-bar-buff:hover .vital-bar-select,
+.vital-bar-buff:focus-within .vital-bar-select {
   opacity: 1;
 }
 .vital-bar-select:hover,

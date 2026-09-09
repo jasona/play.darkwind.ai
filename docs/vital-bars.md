@@ -43,6 +43,24 @@ entry per guild there are three Guild Resource panels, each a slot:
 - Reverse (danger-when-full) meters use the inverted colour scale and pulse at
   85% or more; normal meters pulse at 30% or less. `street_samurai.heat` keeps
   its heat ramp.
+## Buff Bar
+
+The Buffs panel lists every active defence with its time left. The Buff Bar
+is one floating bar for one of them, with a dropdown in its corner (visible
+on hover or focus) listing the buffs active right now. Automatic shows the
+timed buff closest to running out; pinning a name keeps the bar on that
+buff, and when it drops the bar shows empty under that name ("not active")
+so the gap is visible at a glance. The pin is saved per character under
+`darkflow-buff-bar:<characterProfileId>` as `{ pin: "<name>" }`.
+
+The fill drains from the buff's `duration` down to nothing, counting from the
+`remaining` the server sent when the entry arrived (`Char.Defences.List` and
+`Add` each replace the entry, so a refreshed `remaining` restarts the count).
+Buffs turn amber under a quarter left and red under a tenth, where the bar
+pulses; debuffs are red and pulse while they last; untimed buffs show full
+with "active". `client/workspace/buff-bar.ts` holds the reading and pin
+helpers and `BuffBarPanel.svelte` the panel; WorkspaceHost lists it with the
+other vital bars.
 ## Wiring
 
 `client/workspace/vital-bar.ts` is the pure part: which fields a bar reads and
