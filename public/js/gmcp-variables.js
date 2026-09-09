@@ -8,6 +8,15 @@ import {
 
 const GMCP_VARIABLE_PREFIX = 'gmcp';
 const runtimeVariables = {};
+// Frames not yet flattened, latest payload per package; flattened on read.
+const pendingFrames = new Map();
+
+function drainPendingFrames() {
+  if (!pendingFrames.size) return;
+  const frames = Array.from(pendingFrames.values());
+  pendingFrames.clear();
+  for (const frame of frames) flattenValue(frame.name, frame.data);
+}
 
 // Key names repeat across every payload; normalise each distinct one once.
 const SEGMENT_CACHE_LIMIT = 20000;
@@ -93,7 +102,9 @@ export function registerGmcpVariables(packageName, data) {
       .filter(Boolean);
 
     if (!packageParts.length) return;
-    flattenValue(variableNameFor(packageParts), data === undefined ? '' : data);
+    const name = variableNameFor(packageParts);
+    pendingFrames.delete(name);
+    pendingFrames.set(name, { name, data: data === undefined ? '' : data });
   }
 
   dispatchGmcpVariablesChanged({ packageName });
@@ -103,6 +114,7 @@ export function resetGmcpVariables() {
   if (isAutomationCompatActive()) {
     bridgeResetGmcpVariables();
   } else {
+    pendingFrames.clear();
     Object.keys(runtimeVariables).forEach((key) => {
       delete runtimeVariables[key];
     });
@@ -115,6 +127,7 @@ export function getGmcpVariables() {
   if (isAutomationCompatActive()) {
     return bridgeGetGmcpVariables();
   }
+  drainPendingFrames();
   return { ...runtimeVariables };
 }
 
@@ -122,6 +135,7 @@ export function listGmcpVariables() {
   if (isAutomationCompatActive()) {
     return bridgeListGmcpVariables();
   }
+  drainPendingFrames();
   return Object.entries(runtimeVariables)
     .sort((left, right) => left[0].localeCompare(right[0]))
     .map(([name, value]) => ({ name, value }));

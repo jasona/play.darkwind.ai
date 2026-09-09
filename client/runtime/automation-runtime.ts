@@ -133,6 +133,19 @@ export function createAutomationRuntimeState(
 ): AutomationRuntimeState {
   const userVariables = new Map(Object.entries(initialVariables));
   const gmcpVariables = new Map<string, string>();
+  // Frames waiting to be flattened, latest payload per package. Variables are
+  // read when an alias, trigger, or function runs and when the settings
+  // dialog lists them; between reads a busy fight can deliver hundreds of
+  // frames whose flattening nobody would have seen. Every frame also arrives
+  // here twice (the session's own handler and the legacy compat bridge), and
+  // keying by package collapses that duplicate to one entry.
+  const pendingGmcpFrames = new Map<string, { name: string; data: unknown }>();
+  const drainGmcpFrames = (): void => {
+    if (!pendingGmcpFrames.size) return;
+    const frames = Array.from(pendingGmcpFrames.values());
+    pendingGmcpFrames.clear();
+    for (const frame of frames) flattenValue(gmcpVariables, frame.name, frame.data);
+  };
   const timerRegistry = new Map<string, TimerRegistryEntry>();
 
   const persistUserVariables = (): boolean =>
@@ -195,6 +208,7 @@ export function createAutomationRuntimeState(
     },
 
     getAutomationVariables(): Record<string, string> {
+      drainGmcpFrames();
       const merged: Record<string, string> = {};
       for (const [name, value] of gmcpVariables.entries()) {
         merged[name] = value;
@@ -212,18 +226,24 @@ export function createAutomationRuntimeState(
         .filter(Boolean);
 
       if (!packageParts.length) return;
-      flattenValue(gmcpVariables, variableNameFor(packageParts), data === undefined ? "" : data);
+      const name = variableNameFor(packageParts);
+      // Re-insert so drain order follows the latest arrival of each package.
+      pendingGmcpFrames.delete(name);
+      pendingGmcpFrames.set(name, { name, data: data === undefined ? "" : data });
     },
 
     resetGmcpVariables(): void {
+      pendingGmcpFrames.clear();
       gmcpVariables.clear();
     },
 
     getGmcpVariables(): Record<string, string> {
+      drainGmcpFrames();
       return Object.fromEntries(gmcpVariables.entries());
     },
 
     listGmcpVariables(): Array<{ name: string; value: string }> {
+      drainGmcpFrames();
       return Array.from(gmcpVariables.entries())
         .sort((left, right) => left[0].localeCompare(right[0]))
         .map(([name, value]) => ({ name, value }));

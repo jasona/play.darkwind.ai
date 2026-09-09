@@ -61,12 +61,25 @@ took 52 ms in the handler before the flattener change.
 - A subscriber to a snapshot should compare its own slice by reference before
   redrawing.
 
+## GMCP variables are flattened on read
+
+Every frame used to be flattened into automation variables twice: once by
+the session's own wildcard handler and once through the legacy compat bridge
+(`registerGmcpVariables` in `public/js/gmcp-variables.js`, which the
+bootstrap also registers on the bus). Under the dev server the two are even
+different module instances, because imports from TypeScript get a `?import`
+copy while the legacy graph loads the plain URL, so the legacy copy flattened
+into a map only it could see.
+
+Both flatteners now queue the latest payload per package and flatten when
+the variables are read: when an alias, trigger, or function expands, or the
+settings dialog lists them. Duplicate deliveries of one frame collapse to a
+single queue entry, a fight's worth of frames nobody read costs nothing, and
+the wiring is unchanged. The one semantic difference: if a package arrives
+twice before a read, keys present only in the older payload are not kept.
+
 ## Still open
 
-- Both GMCP variable flatteners run on every frame. When the automation
-  compat bridge is active the legacy one delegates to the runtime, so the
-  runtime flattens each frame twice. Untangling that needs a decision about
-  what still reads the legacy module's own copy.
 - `Char.Vitals` fans out to every information panel, the combat, audio,
   notifications, and visual-effects runtimes, and the legacy panel manager.
   Panels now skip unchanged slices, but the runtimes still rebuild and freeze
