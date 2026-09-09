@@ -31,10 +31,12 @@ entry per guild there are three Guild Resource panels, each a slot:
 - By default slot N shows the Nth meter in the current guild vitals, using the
   item's own label, so an alt in another guild sees that guild's resources
   with no setup.
-- The gear in the panel's corner (visible on hover) lists the meters currently
-  on offer; picking one pins the slot to that item id. If the pinned item is
-  missing from a later snapshot the slot falls back to its positional default
-  and the tooltip says so. "Automatic" clears the pin.
+- A dropdown in the panel's corner (visible on hover or focus) lists the meters
+  currently on offer, grouped by guild when more than one guild's meters are
+  present; choosing one pins the slot to that item id. If the pinned item is
+  missing from a later snapshot the slot falls back to its positional default,
+  the dropdown shows the id as "not present", and the tooltip says so.
+  "Automatic" clears the pin.
 - Pins are a panel preference, saved per character in local storage under
   `darkflow-guild-bars:<characterProfileId>` as `{ pins: { "1": "<id>" } }`,
   like the Command Board's column count.
@@ -46,7 +48,7 @@ entry per guild there are three Guild Resource panels, each a slot:
 `client/workspace/vital-bar.ts` is the pure part: which fields a bar reads and
 what it shows (`vitalReading`), plus the panel ids (`hpBar`, `spBar`).
 `VitalBarPanel.svelte` renders one bar from `session.information`, and
-`GuildBarPanel.svelte` one guild meter with its picker (`guildBarReading`,
+`GuildBarPanel.svelte` one guild meter with its dropdown (`guildBarReading`,
 `guildMeters`, `loadGuildBarPins`, `saveGuildBarPin`); WorkspaceHost
 registers both panels, adds them to the Character menu group, the sheet, and
 the restore list, and places them when opened.

@@ -6,6 +6,7 @@
     guildBarReading,
     guildBarSlotForPanel,
     guildBarStorageKey,
+    guildMeterGroups,
     loadGuildBarPins,
     saveGuildBarPin,
   } from "./vital-bar.ts";
@@ -23,8 +24,10 @@
 
   let guildVitals = $state<unknown>(activeSession.information.getSnapshot().guildVitals);
   let pinnedId = $state(loadGuildBarPins(storage, storageKey)[String(slot)] ?? "");
-  let picking = $state(false);
   const reading = $derived(guildBarReading(guildVitals, slot, pinnedId));
+  // One <optgroup> per guild when meters from several guilds are on offer;
+  // a flat list when they all belong to one.
+  const groups = $derived(guildMeterGroups(reading.choices));
   const critical = $derived(
     reading.meter !== null &&
       (reading.meter.reverse ? reading.percent >= 85 : reading.percent <= 30),
@@ -33,7 +36,6 @@
   function pin(meterId: string): void {
     saveGuildBarPin(storage, storageKey, slot, meterId);
     pinnedId = meterId;
-    picking = false;
   }
 
   $effect(() =>
@@ -49,7 +51,6 @@
   class="vital-bar-panel vital-bar-guild"
   class:is-unknown={!reading.known}
   class:is-critical={critical}
-  class:is-picking={picking}
   data-panel-id={panelId}
   data-workspace-owned="true"
   aria-label="Guild resource {slot}"
@@ -63,7 +64,7 @@
     aria-valuenow={reading.known ? reading.current : undefined}
     aria-valuetext={reading.text}
     title={reading.meter
-      ? `${reading.meter.guild ? reading.meter.guild + ": " : ""}${reading.meter.label}${reading.meter.tip ? ". " + reading.meter.tip : ""}${reading.pinMissing ? ". Pinned resource not present; showing the slot's default." : ""}`
+      ? `${reading.meter.guild ? reading.meter.guild + ": " : ""}${reading.meter.label}${reading.meter.tip ? ". " + reading.meter.tip : ""}${reading.pinMissing ? ". Chosen resource not present; showing the slot's default." : ""}`
       : "No guild resource to show yet."}
   >
     <div
@@ -77,44 +78,33 @@
       <span class="vital-bar-percent">{reading.known ? `${reading.percent}%` : ""}</span>
     </div>
   </div>
-  <button
-    type="button"
-    class="vital-bar-pick"
-    title={reading.pinnedId
-      ? `Pinned to ${reading.pinnedId}. Choose which guild resource this slot shows.`
+  <!-- The dropdown sits in the corner, faint until the pointer or focus
+       reaches the panel, and pins the slot to whichever meter is chosen. -->
+  <select
+    class="vital-bar-select"
+    aria-label="Guild resource shown in slot {slot}"
+    title={reading.pinMissing
+      ? `Chosen resource "${reading.pinnedId}" is not in the current guild data; showing the slot's default.`
       : "Choose which guild resource this slot shows."}
-    aria-label="Choose guild resource"
-    aria-expanded={picking}
-    onclick={() => (picking = !picking)}>&#x2699;</button
+    value={reading.pinnedId}
+    onchange={(event) => pin(event.currentTarget.value)}
   >
-  {#if picking}
-    <div class="vital-bar-picker" role="group" aria-label="Guild resource for slot {slot}">
-      <button
-        type="button"
-        class="vital-bar-choice"
-        aria-pressed={reading.pinnedId === ""}
-        onclick={() => pin("")}
-      >
-        Automatic: resource {slot} of the guild
-      </button>
-      {#each reading.choices as choice (choice.id)}
-        <button
-          type="button"
-          class="vital-bar-choice"
-          aria-pressed={reading.pinnedId === choice.id}
-          onclick={() => pin(choice.id)}
-        >
-          {choice.label}{choice.guild ? ` (${choice.guild})` : ""}
-        </button>
+    <option value="">Automatic (resource {slot})</option>
+    {#if reading.pinMissing}
+      <option value={reading.pinnedId}>{reading.pinnedId} (not present)</option>
+    {/if}
+    {#if groups.length <= 1}
+      {#each reading.choices as meter (meter.id)}
+        <option value={meter.id}>{meter.label}</option>
       {/each}
-      {#if reading.pinMissing}
-        <p class="vital-bar-picker-note">
-          Pinned resource "{reading.pinnedId}" is not in the current guild data.
-        </p>
-      {/if}
-      {#if reading.choices.length === 0}
-        <p class="vital-bar-picker-note">No guild resources have arrived yet.</p>
-      {/if}
-    </div>
-  {/if}
+    {:else}
+      {#each groups as group (group.guild)}
+        <optgroup label={group.guild || "Other"}>
+          {#each group.meters as meter (meter.id)}
+            <option value={meter.id}>{meter.label}</option>
+          {/each}
+        </optgroup>
+      {/each}
+    {/if}
+  </select>
 </section>

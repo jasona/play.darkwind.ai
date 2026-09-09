@@ -95,6 +95,18 @@ test("guild resource slots pick meters by position or pin, colour reverse meters
   assert.deepEqual([empty.known, empty.text, empty.label], [false, "--", "Guild resource 5"]);
   assert.equal(m.guildBarReading(null, 1, "").choices.length, 0);
 
+  assert.deepEqual(
+    m.guildMeterGroups(meters).map((g) => [g.guild, g.meters.map((x) => x.id)]),
+    [
+      ["Vampire", ["vampire.vitae"]],
+      ["Street Samurai", ["street_samurai.heat"]],
+      ["Death Knight", ["dk.wrath"]],
+    ],
+    "the dropdown groups meters by guild in first-seen order",
+  );
+  assert.deepEqual(m.guildMeterGroups([]), []);
+  assert.equal(m.guildMeterGroups([meters[0], { ...meters[1], guild: "Vampire" }]).length, 1, "one guild, one group");
+
   assert.deepEqual(m.GUILD_BAR_PANEL_IDS, ["guildBar1", "guildBar2", "guildBar3"]);
   assert.equal(m.guildBarSlotForPanel("guildBar2"), 2);
   assert.equal(m.guildBarSlotForPanel("hpBar"), 0);

@@ -253,3 +253,19 @@ export function saveGuildBarPin(
   }
   return current;
 }
+
+export interface GuildMeterGroup {
+  readonly guild: string;
+  readonly meters: readonly GuildMeter[];
+}
+
+/** Meters bucketed by guild, in first-seen order, for a grouped dropdown. */
+export function guildMeterGroups(meters: readonly GuildMeter[]): readonly GuildMeterGroup[] {
+  const groups: { guild: string; meters: GuildMeter[] }[] = [];
+  for (const meter of meters) {
+    const group = groups.find((candidate) => candidate.guild === meter.guild);
+    if (group) group.meters.push(meter);
+    else groups.push({ guild: meter.guild, meters: [meter] });
+  }
+  return groups;
+}
