@@ -1,6 +1,7 @@
 import type { ApplicationStateV1 } from "../model/profiles";
 import type {
   AliasDefinition,
+  CommandButtonDefinition,
   ConfigKind,
   ConfigurationSet,
   FunctionDefinition,
@@ -32,7 +33,8 @@ export interface PublishConfigurationSetInput {
     | HighlightDefinition[]
     | FunctionDefinition[]
     | KeyMappingDefinition[]
-    | TimerDefinition[];
+    | TimerDefinition[]
+    | CommandButtonDefinition[];
   label?: string;
 }
 
