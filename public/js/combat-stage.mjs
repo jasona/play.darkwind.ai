@@ -87,11 +87,34 @@ function fallbackList(value) {
   return typeof value === 'string' && value ? [value] : [];
 }
 
+const hexCache = new Map();
+
 function hexToRgb(hex) {
-  const match = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
-  if (!match) return null;
-  const value = parseInt(match[1], 16);
-  return [(value >> 16) & 255, (value >> 8) & 255, value & 255];
+  const key = String(hex || '');
+  const cached = hexCache.get(key);
+  if (cached !== undefined) return cached;
+  const match = /^#?([0-9a-f]{6})$/i.exec(key.trim());
+  const value = match ? parseInt(match[1], 16) : 0;
+  const rgb = match ? [(value >> 16) & 255, (value >> 8) & 255, value & 255] : null;
+  if (hexCache.size > 256) hexCache.clear();
+  hexCache.set(key, rgb);
+  return rgb;
+}
+
+// Radial glows (token halos, side tints) are drawn from small cached sprites
+// instead of a fresh gradient per frame; a sprite is keyed by its radius and
+// colour so a bobbing token reuses it every frame.
+// Device pixels the stage will rasterise per frame. A large floating Scene
+// on a 2x display would otherwise be four million pixels every frame, which
+// is where software rasterisation starts to stall the page; past the budget
+// the pixel ratio eases down (never below 1) and the painting goes a little
+// softer instead.
+const PIXEL_BUDGET = 2_200_000;
+const STATS_WINDOW_MS = 5000;
+const GLOW_SPRITE_LIMIT = 24;
+const PORTRAIT_SPRITE_LIMIT = 8;
+function bucketRadius(radius) {
+  return Math.max(4, Math.round(radius / 4) * 4);
 }
 
 function rgba(color, alpha) {
@@ -102,6 +125,14 @@ function rgba(color, alpha) {
 export function createCombatStage(doc, options = {}) {
   if (!isCanvasStageSupported(doc)) return null;
   const win = doc.defaultView || (typeof window !== 'undefined' ? window : null);
+  let showStats = options.showStats === true;
+  if (!showStats && win) {
+    try {
+      showStats = win.localStorage && win.localStorage.getItem('darkflow-scene-stats') === '1';
+    } catch (error) {
+      showStats = false;
+    }
+  }
   const raf = options.requestAnimationFrame
     || (win && typeof win.requestAnimationFrame === 'function'
       ? win.requestAnimationFrame.bind(win)
@@ -148,6 +179,14 @@ export function createCombatStage(doc, options = {}) {
     // rate; the idle breath reads the same at 30fps and costs half as much.
     _restFrameSkip: false,
     _hasSize: false,
+    _glowSprites: new Map(),
+    _portraitSprites: new Map(),
+    _spriteSurfaces: true,
+    // Rolling draw cost: a smoothed per-frame draw time and the worst frame
+    // of the last few seconds. Shown on the canvas when stats are enabled
+    // (options.showStats, or localStorage darkflow-scene-stats = "1").
+    _stats: { drawMs: 0, maxDrawMs: 0, maxAt: 0 },
+    _showStats: showStats,
     _actions: [],
     _playedSeqs: new Set(),
     _encounterKey: '',
@@ -179,6 +218,49 @@ export function createCombatStage(doc, options = {}) {
     _lightDir: 1,
     frames: 0,
     // The scene state, for diagnostics and tests.
+    // { drawMs, maxDrawMs, width, height, dpr, frames }: the smoothed draw
+    // time, the worst frame of the last few seconds, and the canvas size.
+    get stats() {
+      return {
+        drawMs: this._stats.drawMs,
+        maxDrawMs: this._stats.maxDrawMs,
+        width: this._width,
+        height: this._height,
+        dpr: this._dpr,
+        frames: this.frames,
+      };
+    },
+
+    setShowStats(enabled) {
+      this._showStats = !!enabled;
+    },
+
+    _recordDraw(elapsed, frameTime) {
+      const stats = this._stats;
+      stats.drawMs = stats.drawMs ? stats.drawMs * 0.9 + elapsed * 0.1 : elapsed;
+      if (frameTime - stats.maxAt > STATS_WINDOW_MS) {
+        stats.maxDrawMs = 0;
+        stats.maxAt = frameTime;
+      }
+      if (elapsed > stats.maxDrawMs) stats.maxDrawMs = elapsed;
+      if (this._showStats) this._drawStats();
+    },
+
+    _drawStats() {
+      const c = ctx;
+      const stats = this._stats;
+      const text = 'draw ' + stats.drawMs.toFixed(2) + 'ms  max ' + stats.maxDrawMs.toFixed(1) + 'ms  '
+        + this._width + 'x' + this._height + '@' + this._dpr.toFixed(2) + '  f' + this.frames;
+      c.save();
+      c.setTransform(this._dpr, 0, 0, this._dpr, 0, 0);
+      c.font = '11px monospace';
+      c.fillStyle = 'rgba(0, 0, 0, 0.6)';
+      c.fillRect(4, 4, text.length * 6.8 + 8, 18);
+      c.fillStyle = '#d6e4f0';
+      c.fillText(text, 8, 17);
+      c.restore();
+    },
+
     get scene() {
       return { idle: this._sceneIdle, presence: this._presence };
     },
@@ -281,6 +363,8 @@ export function createCombatStage(doc, options = {}) {
         this._resizeHandler = null;
       }
       this._images.clear();
+      this._glowSprites.clear();
+      this._portraitSprites.clear();
       if (element.parentNode && typeof element.parentNode.removeChild === 'function') {
         element.parentNode.removeChild(element);
       }
@@ -372,7 +456,8 @@ export function createCombatStage(doc, options = {}) {
       const height = Math.max(1, Math.round(rawHeight));
       // Capped at 2: a 3x display would triple the pixels the fight loop
       // paints every frame for no visible gain on a painted scene.
-      const dpr = Math.max(1, Math.min(2, (win && win.devicePixelRatio) || 1));
+      const budgetDpr = Math.sqrt(PIXEL_BUDGET / Math.max(1, width * height));
+      const dpr = Math.max(1, Math.min(2, (win && win.devicePixelRatio) || 1, budgetDpr));
       if (width === this._width && height === this._height && dpr === this._dpr) return;
       this._width = width;
       this._height = height;
@@ -431,7 +516,9 @@ export function createCombatStage(doc, options = {}) {
         this._restFrameSkip = false;
       } else {
         this._restFrameSkip = resting;
+        const drawStart = now();
         this._draw(t);
+        this._recordDraw(now() - drawStart, frameTime);
         this.frames++;
       }
       const view = this._view;
@@ -489,7 +576,6 @@ export function createCombatStage(doc, options = {}) {
     },
 
     _draw(t) {
-      this._resize();
       const w = this._width;
       const h = this._height;
       const layout = sceneLayout(computeStageLayout(w, h), this._presence);
@@ -600,12 +686,89 @@ export function createCombatStage(doc, options = {}) {
         [layout.player.x, layout.player.y, this._palette.accent, 0.16],
         [layout.target.x, layout.target.y, this._palette.danger, 0.14],
       ]) {
-        const tint = c.createRadialGradient(x, y, 0, x, y, reach);
-        tint.addColorStop(0, rgba(color, alpha));
-        tint.addColorStop(1, rgba(color, 0));
-        c.fillStyle = tint;
-        c.fillRect(x - reach, y - reach, reach * 2, reach * 2);
+        this._drawGlow(c, x, y, reach, color, alpha, 0);
       }
+    },
+
+    // Paints a radial glow of `reach` around (x, y): `alpha` at the centre
+    // (held flat out to innerRatio of the reach) fading to nothing at the
+    // edge. Cached as a sprite per radius bucket and colour; falls back to a
+    // live gradient where offscreen canvases are unavailable.
+    _drawGlow(c, x, y, reach, color, alpha, innerRatio) {
+      const sprite = this._glowSprite(reach, color, alpha, innerRatio);
+      if (sprite) {
+        c.drawImage(sprite.canvas, x - sprite.reach, y - sprite.reach, sprite.reach * 2, sprite.reach * 2);
+        return;
+      }
+      const glow = c.createRadialGradient(x, y, reach * innerRatio, x, y, reach);
+      glow.addColorStop(0, rgba(color, alpha));
+      glow.addColorStop(1, rgba(color, 0));
+      c.fillStyle = glow;
+      c.fillRect(x - reach, y - reach, reach * 2, reach * 2);
+    },
+
+    _offscreen(width, height) {
+      if (!this._spriteSurfaces) return null;
+      try {
+        const surface = doc.createElement('canvas');
+        const context = surface && typeof surface.getContext === 'function' ? surface.getContext('2d') : null;
+        if (!context) {
+          this._spriteSurfaces = false;
+          return null;
+        }
+        surface.width = Math.max(1, Math.round(width));
+        surface.height = Math.max(1, Math.round(height));
+        return { canvas: surface, ctx: context };
+      } catch (error) {
+        this._spriteSurfaces = false;
+        return null;
+      }
+    },
+
+    _glowSprite(reach, color, alpha, innerRatio) {
+      const bucket = bucketRadius(reach);
+      const dpr = this._dpr;
+      const key = bucket + '|' + color + '|' + alpha + '|' + innerRatio + '|' + dpr;
+      const cached = this._glowSprites.get(key);
+      if (cached) return cached;
+      const size = bucket * 2 * dpr;
+      const surface = this._offscreen(size, size);
+      if (!surface) return null;
+      const g = surface.ctx;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const glow = g.createRadialGradient(bucket, bucket, bucket * innerRatio, bucket, bucket, bucket);
+      glow.addColorStop(0, rgba(color, alpha));
+      glow.addColorStop(1, rgba(color, 0));
+      g.fillStyle = glow;
+      g.fillRect(0, 0, bucket * 2, bucket * 2);
+      if (this._glowSprites.size >= GLOW_SPRITE_LIMIT) this._glowSprites.clear();
+      const sprite = { canvas: surface.canvas, reach: bucket };
+      this._glowSprites.set(key, sprite);
+      return sprite;
+    },
+
+    // The portrait disc at the size it is drawn, so a fight does not
+    // downscale a full-resolution portrait every frame. Keyed by image and
+    // radius bucket; the disc is cropped the way the live draw was.
+    _portraitSprite(img, radius) {
+      const bucket = bucketRadius(radius);
+      const dpr = this._dpr;
+      const key = (img.src || '') + '|' + bucket + '|' + dpr;
+      const cached = this._portraitSprites.get(key);
+      if (cached && cached.img === img) return cached;
+      const size = bucket * 2;
+      const surface = this._offscreen(size * dpr, size * dpr);
+      if (!surface) return null;
+      const g = surface.ctx;
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const scale = Math.max(size / img.naturalWidth, size / img.naturalHeight);
+      const drawW = img.naturalWidth * scale;
+      const drawH = img.naturalHeight * scale;
+      g.drawImage(img, bucket - drawW / 2, -(drawH - size) * 0.3, drawW, drawH);
+      if (this._portraitSprites.size >= PORTRAIT_SPRITE_LIMIT) this._portraitSprites.clear();
+      const sprite = { canvas: surface.canvas, img, size };
+      this._portraitSprites.set(key, sprite);
+      return sprite;
     },
 
     // The static part of the backdrop at device resolution, rebuilt only when
@@ -1455,13 +1618,7 @@ export function createCombatStage(doc, options = {}) {
       const x = head.x;
       const y = head.y;
       c.save();
-      const glow = c.createRadialGradient(x, y, radius * 0.7, x, y, radius * 1.6);
-      glow.addColorStop(0, rgba(ringColor, isActor ? 0.34 : 0.16));
-      glow.addColorStop(1, rgba(ringColor, 0));
-      c.fillStyle = glow;
-      c.beginPath();
-      c.arc(x, y, radius * 1.6, 0, Math.PI * 2);
-      c.fill();
+      this._drawGlow(c, x, y, radius * 1.6, ringColor, isActor ? 0.34 : 0.16, 0.7 / 1.6);
 
       c.save();
       c.beginPath();
@@ -1471,10 +1628,15 @@ export function createCombatStage(doc, options = {}) {
       c.fillStyle = side === 'player' ? '#07131a' : '#180d0b';
       c.fillRect(x - radius, y - radius, radius * 2, radius * 2);
       if (img && img.naturalWidth > 0) {
-        const scale = Math.max((radius * 2) / img.naturalWidth, (radius * 2) / img.naturalHeight);
-        const drawW = img.naturalWidth * scale;
-        const drawH = img.naturalHeight * scale;
-        c.drawImage(img, x - drawW / 2, y - radius - (drawH - radius * 2) * 0.3, drawW, drawH);
+        const portrait = this._portraitSprite(img, radius);
+        if (portrait) {
+          c.drawImage(portrait.canvas, x - radius, y - radius, radius * 2, radius * 2);
+        } else {
+          const scale = Math.max((radius * 2) / img.naturalWidth, (radius * 2) / img.naturalHeight);
+          const drawW = img.naturalWidth * scale;
+          const drawH = img.naturalHeight * scale;
+          c.drawImage(img, x - drawW / 2, y - radius - (drawH - radius * 2) * 0.3, drawW, drawH);
+        }
       } else {
         this._drawSilhouette(c, { x, y }, radius, combatant, ringColor);
       }
@@ -1484,12 +1646,17 @@ export function createCombatStage(doc, options = {}) {
       }
       c.restore();
 
-      c.lineWidth = Math.max(2, radius * 0.1);
-      c.strokeStyle = rgba(ringColor, 0.95);
-      c.shadowColor = rgba(ringColor, 0.7);
-      c.shadowBlur = isActor ? radius * 0.4 : radius * 0.15;
+      // The ring's soft edge used to be a shadowBlur, which rasterises a
+      // blur every frame; a wider translucent stroke underneath reads the
+      // same at token size and costs a second arc.
+      const ringWidth = Math.max(2, radius * 0.1);
       c.beginPath();
       c.arc(x, y, radius, 0, Math.PI * 2);
+      c.lineWidth = ringWidth + (isActor ? radius * 0.3 : radius * 0.12);
+      c.strokeStyle = rgba(ringColor, isActor ? 0.28 : 0.18);
+      c.stroke();
+      c.lineWidth = ringWidth;
+      c.strokeStyle = rgba(ringColor, 0.95);
       c.stroke();
       c.restore();
     },

@@ -78,6 +78,36 @@ single queue entry, a fight's worth of frames nobody read costs nothing, and
 the wiring is unchanged. The one semantic difference: if a package arrives
 twice before a read, keys present only in the older payload are not kept.
 
+## The Scene and tab drift
+
+Connection Health's "tab drift" is the one-second local timer firing late,
+which needs the main thread blocked for a hundred milliseconds or more at a
+time. Profiled in headless Chromium at a 2x pixel ratio through a fight with
+room art changing every few seconds, the Scene's draw costs well under a
+millisecond per frame and the timer never drifted, so on a machine where
+the Scene does drift the cost is in raster and compositing rather than in
+the script. Three things were done about it:
+
+- Per-frame work that scales with pixel count was trimmed: portraits are
+  drawn from a pre-scaled disc instead of downscaling the full portrait
+  every frame, token halos and side tints come from cached sprites instead
+  of fresh gradients, the ring glow is a second stroke instead of a
+  `shadowBlur` (a blur rasterised every frame), the draw no longer reads
+  layout, and colour parsing is memoised. The head draw fell by two thirds.
+- A pixel budget: past about 2.2 million device pixels the stage eases its
+  pixel ratio down towards 1, so a large floating Scene on a 2x display
+  rasterises about half the pixels for a slightly softer painting.
+- A readout: set `localStorage.darkflow-scene-stats` to `"1"` (or pass
+  `showStats` to the stage) and reload, and the canvas shows its smoothed
+  draw time, the worst frame of the last five seconds, its size, and the
+  pixel ratio in use. If draw time is small while drift persists, the Scene
+  is not the cause; look at image loads, other panels, or the GPU process.
+
+Room art is a stall in its own right: the shipped paintings are 1254 px
+square PNGs of about 2.7 MB, and the first composition of a new painting
+was the one long task (about 76 ms) in the run. Decoding is already
+off-thread; the remaining option is to downscale off-thread as well with
+`createImageBitmap` and its resize options before the first draw.
 ## Still open
 
 - `Char.Vitals` fans out to every information panel, the combat, audio,

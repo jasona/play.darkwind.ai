@@ -707,3 +707,40 @@ test('a resting fight draws every other frame while an exchange draws every fram
   const drawn = stage.frames - before;
   assert.ok(drawn >= 9 && drawn <= 12, 'about half of 21 resting frames are drawn: ' + drawn);
 });
+
+test('a large stage eases its pixel ratio down to the pixel budget and reports draw stats', () => {
+  const body = bodyElement();
+  const renderer = mountRenderer(body);
+  renderer.render({
+    model: combatModel({ encounter_id: 'encounter-budget' }),
+    vitals: { hp: 50, maxhp: 100 },
+    enemy: { enemy_name: 'a drake', enemy_curhp: 5, enemy_maxhp: 100, enemy_is_npc: 1 },
+    avatar: {},
+    present: true,
+  });
+  const stage = renderer.stage;
+  const canvas = findCanvas(body);
+  assert.equal(stage.stats.dpr, 2, 'a 640x320 stage fits the budget at the display ratio');
+  const host = canvas.parentNode;
+  host.clientWidth = 1600;
+  host.clientHeight = 1000;
+  stage._resize();
+  const eased = stage.stats.dpr;
+  assert.ok(eased > 1 && eased < 1.3, 'ratio eased towards the budget: ' + eased);
+  assert.equal(canvas.width, Math.round(1600 * eased));
+  assert.ok(1600 * 1000 * eased * eased <= 2_200_000 + 1, 'device pixels stay within the budget');
+  host.clientWidth = 640;
+  host.clientHeight = 320;
+  stage._resize();
+  assert.equal(stage.stats.dpr, 2, 'shrinking back restores the display ratio');
+
+  for (let t = 0; t <= 400; t += 16) runFrame(t);
+  assert.ok(stage.stats.frames > 0);
+  assert.ok(stage.stats.drawMs >= 0 && stage.stats.maxDrawMs >= 0);
+  const before = canvas.drawLog.filter(([name]) => name === 'fillText').length;
+  stage.setShowStats(true);
+  runFrame(416);
+  runFrame(432);
+  const after = canvas.drawLog.filter(([name]) => name === 'fillText').length;
+  assert.ok(after > before, 'the readout is written onto the canvas once enabled');
+});
