@@ -69,7 +69,7 @@
   >
     <div
       class="vital-bar-fill"
-      style:width={`${reading.percent}%`}
+      style:transform={`scaleX(${reading.percent / 100})`}
       style:background-color={reading.color}
     ></div>
     <div class="vital-bar-text">

@@ -47,11 +47,30 @@ export function createTerminalAutomation({
   let snapshot = session.getEffectiveConfiguration();
   let disposed = false;
 
-  const definitions = (kind: DefinitionKind) =>
+  // Per-line work reads the trigger and highlight lists on every completed
+  // line; rebuilding them each time also gave the pattern cache a fresh object
+  // to miss on. They are derived once per configuration or override change.
+  const deriveDefinitions = (kind: DefinitionKind) =>
     snapshot[kind].map(({ definition }) => ({
       ...definition,
       enabled: enabledOverrides.get(`${kind}:${definition.id}`) ?? definition.enabled,
     }));
+  type DerivedDefinitions = ReturnType<typeof deriveDefinitions>;
+  let definitionCache = new Map<DefinitionKind, DerivedDefinitions>();
+  let highlightDefinitions: (typeof snapshot.highlights)[number]["definition"][] | null = null;
+  const invalidateDefinitions = (): void => {
+    definitionCache = new Map();
+    highlightDefinitions = null;
+  };
+  const definitions = (kind: DefinitionKind): DerivedDefinitions => {
+    const cached = definitionCache.get(kind);
+    if (cached) return cached;
+    const derived = deriveDefinitions(kind);
+    definitionCache.set(kind, derived);
+    return derived;
+  };
+  const highlights = () =>
+    (highlightDefinitions ??= snapshot.highlights.map(({ definition }) => definition));
   const findById = (kind: DefinitionKind, id: string) =>
     definitions(kind).find((definition) => definition.id === String(id || "")) ?? null;
   const findByName = (kind: DefinitionKind, value: string) => {
@@ -77,6 +96,7 @@ export function createTerminalAutomation({
   ) => {
     if (!definition) return { target: null, enabled: null };
     enabledOverrides.set(`${kind}:${definition.id}`, enabled);
+    invalidateDefinitions();
     if (kind === "timers" && !enabled) runtime.clearTimer(definition.id);
     return { target: { ...definition, enabled }, enabled };
   };
@@ -213,6 +233,7 @@ export function createTerminalAutomation({
   const unsubscribeConfiguration = session.terminal.subscribeConfiguration((next) => {
     snapshot = next;
     enabledOverrides.clear();
+    invalidateDefinitions();
     reconcileTimers();
   });
   const sendCommand = (text: string): boolean => {
@@ -250,10 +271,7 @@ export function createTerminalAutomation({
       const result = evaluateTriggerDefinitions(text, definitions("triggers"));
       executeTriggerMatches(result.matches, scopeKey, context());
       return {
-        fragments: applyHighlightDefinitionsToLine(
-          { text, fragments },
-          snapshot.highlights.map(({ definition }) => definition),
-        ).fragments,
+        fragments: applyHighlightDefinitionsToLine({ text, fragments }, highlights()).fragments,
         gag: result.gag,
       };
     },

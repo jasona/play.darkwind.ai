@@ -55,14 +55,24 @@ export function createSessionGmcpDiagnostics(
   const now = options.now ?? Date.now;
   let disposed = false;
   let nextEntryId = 0;
-  let snapshot = deepFreeze({ entries: [] }) as GmcpDiagnosticsSnapshot;
+  // Every GMCP frame lands here whether or not the diagnostics panel is open,
+  // so the ring is a plain array and the frozen snapshot is built on demand.
+  const entries: GmcpDiagnosticEntry[] = [];
+  let snapshot: GmcpDiagnosticsSnapshot | null = null;
   const listeners = new Set<(snapshot: GmcpDiagnosticsSnapshot) => void>();
 
+  const currentSnapshot = (): GmcpDiagnosticsSnapshot =>
+    (snapshot ??= deepFreeze({ entries: entries.slice() }) as GmcpDiagnosticsSnapshot);
   const publish = (entry: GmcpDiagnosticEntry): void => {
     if (disposed) return;
-    snapshot = deepFreeze({ entries: [...snapshot.entries, entry].slice(-GMCP_DIAGNOSTIC_LIMIT) });
+    entries.push(entry);
+    if (entries.length > GMCP_DIAGNOSTIC_LIMIT)
+      entries.splice(0, entries.length - GMCP_DIAGNOSTIC_LIMIT);
+    snapshot = null;
+    if (!listeners.size) return;
+    const next = currentSnapshot();
     for (const listener of [...listeners]) {
-      if (listeners.has(listener)) listener(snapshot);
+      if (listeners.has(listener)) listener(next);
     }
   };
   const append = (packageName: string, payload: string): void =>
@@ -84,10 +94,10 @@ export function createSessionGmcpDiagnostics(
   });
 
   return {
-    getSnapshot: () => snapshot,
+    getSnapshot: () => currentSnapshot(),
     subscribe(listener) {
       if (disposed) return () => {};
-      listener(snapshot);
+      listener(currentSnapshot());
       listeners.add(listener);
       return () => listeners.delete(listener);
     },

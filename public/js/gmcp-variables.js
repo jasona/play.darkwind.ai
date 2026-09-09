@@ -9,12 +9,28 @@ import {
 const GMCP_VARIABLE_PREFIX = 'gmcp';
 const runtimeVariables = {};
 
+// Key names repeat across every payload; normalise each distinct one once.
+const SEGMENT_CACHE_LIMIT = 20000;
+const segmentCache = new Map();
+
 function toVariableSegment(value) {
-  return String(value || '')
+  const raw = String(value || '');
+  const cached = segmentCache.get(raw);
+  if (cached !== undefined) return cached;
+  const segment = raw
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
+  if (segmentCache.size >= SEGMENT_CACHE_LIMIT) segmentCache.clear();
+  segmentCache.set(raw, segment);
+  return segment;
+}
+
+function childVariableName(parentName, key) {
+  const segment = toVariableSegment(key);
+  if (!segment) return parentName;
+  return parentName ? parentName + '_' + segment : segment;
 }
 
 function variableNameFor(parts) {
@@ -30,31 +46,32 @@ function serializeValue(value) {
   return String(value);
 }
 
-function setVariable(parts, value) {
-  const name = variableNameFor(parts);
+function setVariable(name, value) {
   if (!name || name === GMCP_VARIABLE_PREFIX) return;
   runtimeVariables[name] = serializeValue(value);
 }
 
-function flattenValue(parts, value) {
+// The name is built on the way down instead of re-normalising the whole path
+// at every node.
+function flattenValue(name, value) {
   if (value === undefined) return;
 
   if (value === null || typeof value !== 'object') {
-    setVariable(parts, value);
+    setVariable(name, value);
     return;
   }
 
-  setVariable(parts, value);
+  setVariable(name, value);
 
   if (Array.isArray(value)) {
     value.forEach((item, index) => {
-      flattenValue([...parts, String(index)], item);
+      flattenValue(childVariableName(name, String(index)), item);
     });
     return;
   }
 
   Object.entries(value).forEach(([key, item]) => {
-    flattenValue([...parts, key], item);
+    flattenValue(childVariableName(name, key), item);
   });
 }
 
@@ -76,7 +93,7 @@ export function registerGmcpVariables(packageName, data) {
       .filter(Boolean);
 
     if (!packageParts.length) return;
-    flattenValue(packageParts, data === undefined ? '' : data);
+    flattenValue(variableNameFor(packageParts), data === undefined ? '' : data);
   }
 
   dispatchGmcpVariablesChanged({ packageName });

@@ -14,6 +14,7 @@ import type {
 } from "./types";
 
 const gmcpTextDecoder = new TextDecoder();
+const utf8Encoder = new TextEncoder();
 
 const WS_CONNECTING = 0;
 const WS_OPEN = 1;
@@ -299,7 +300,7 @@ export function createSessionTransport(
               kind: "text",
               size: event.data.length,
             });
-            health.recordInboundText(at, new TextEncoder().encode(event.data).byteLength);
+            health.recordInboundText(at, utf8Encoder.encode(event.data).byteLength);
             callbacks.onText(event.data);
             reconnect.scheduleLostTransmissionRecovery(event.data, health);
           } else {

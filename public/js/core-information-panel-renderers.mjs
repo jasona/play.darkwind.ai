@@ -213,7 +213,9 @@ export function renderVitalBar(bodyEl, label, cur, max, opts = {}) {
   if (opts.title) row.title = opts.title;
   else row.removeAttribute('title');
   const fill = row.querySelector('.vitals-bar-fill');
-  fill.style.width = pct + '%';
+  // scaleX instead of width: a transform animates on the compositor, while a
+  // width transition forces a layout on every frame it is running.
+  fill.style.transform = 'scaleX(' + pct / 100 + ')';
   if (opts.colorMode === 'heat') {
     fill.style.backgroundColor = heatVitalBarColor(pct);
   }

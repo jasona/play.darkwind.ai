@@ -147,6 +147,7 @@ export function createCombatStage(doc, options = {}) {
     // Steady-state frames (a fight with no exchange playing) draw at half
     // rate; the idle breath reads the same at 30fps and costs half as much.
     _restFrameSkip: false,
+    _hasSize: false,
     _actions: [],
     _playedSeqs: new Set(),
     _encounterKey: '',
@@ -225,7 +226,9 @@ export function createCombatStage(doc, options = {}) {
         const keep = Array.from(this._playedSeqs).slice(-256);
         this._playedSeqs = new Set(keep);
       }
-      this._resize();
+      // Without a resize observer (older hosts, tests) publish is the only
+      // chance to notice a size change; with one, the observer already did.
+      if (!this._resizeObserver) this._resize();
       this.start();
     },
 
@@ -357,10 +360,16 @@ export function createCombatStage(doc, options = {}) {
       return null;
     },
 
+    // The only place the stage reads layout. The resize observer calls it
+    // when the pane changes size; the frame loop trusts the cached answer so
+    // a busy terminal's pending layout is not forced once per frame.
     _resize() {
       const parent = element;
-      const width = Math.max(1, Math.round(parent.clientWidth || 0));
-      const height = Math.max(1, Math.round(parent.clientHeight || 0));
+      const rawWidth = parent.clientWidth || 0;
+      const rawHeight = parent.clientHeight || 0;
+      this._hasSize = rawWidth > 0 && rawHeight > 0;
+      const width = Math.max(1, Math.round(rawWidth));
+      const height = Math.max(1, Math.round(rawHeight));
       // Capped at 2: a 3x display would triple the pixels the fight loop
       // paints every frame for no visible gain on a painted scene.
       const dpr = Math.max(1, Math.min(2, (win && win.devicePixelRatio) || 1));
@@ -407,7 +416,7 @@ export function createCombatStage(doc, options = {}) {
       }
       // A collapsed or hidden pane has no size. Stop drawing; the resize
       // observer or the next publish restarts the loop when it comes back.
-      if (!(element.clientWidth > 0 && element.clientHeight > 0)) {
+      if (!this._hasSize) {
         this.running = false;
         return;
       }

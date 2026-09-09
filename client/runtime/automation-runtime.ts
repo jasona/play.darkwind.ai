@@ -49,18 +49,37 @@ function normalizeWhitespace(value: string): string {
     .replace(/\s+/g, " ");
 }
 
+// Segment names repeat endlessly across a session (every inventory item has
+// an "id", a "name", ...), so the regex normalisation runs once per distinct
+// key. The cache is cleared if it ever grows past a sane size.
+const SEGMENT_CACHE_LIMIT = 20_000;
+const segmentCache = new Map<string, string>();
+
 /** Mirrors gmcp-variables.js toVariableSegment for identical variable naming. */
 function toVariableSegment(value: unknown): string {
-  return String(value || "")
+  const raw = String(value || "");
+  const cached = segmentCache.get(raw);
+  if (cached !== undefined) return cached;
+  const segment = raw
     .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+  if (segmentCache.size >= SEGMENT_CACHE_LIMIT) segmentCache.clear();
+  segmentCache.set(raw, segment);
+  return segment;
 }
 
 /** Mirrors gmcp-variables.js variableNameFor. */
 function variableNameFor(parts: string[]): string {
   return [GMCP_VARIABLE_PREFIX, ...parts].map(toVariableSegment).filter(Boolean).join("_");
+}
+
+/** The name a child key gets under an already-built parent name. */
+function childVariableName(parentName: string, key: string): string {
+  const segment = toVariableSegment(key);
+  if (!segment) return parentName;
+  return parentName ? `${parentName}_${segment}` : segment;
 }
 
 /** Mirrors gmcp-variables.js serializeValue. */
@@ -72,34 +91,37 @@ function serializeValue(value: unknown): string {
 
 function setGmcpVariableEntry(
   gmcpVariables: Map<string, string>,
-  parts: string[],
+  name: string,
   value: unknown,
 ): void {
-  const name = variableNameFor(parts);
   if (!name || name === GMCP_VARIABLE_PREFIX) return;
   gmcpVariables.set(name, serializeValue(value));
 }
 
-/** Mirrors gmcp-variables.js flattenValue. */
-function flattenValue(gmcpVariables: Map<string, string>, parts: string[], value: unknown): void {
+/**
+ * Mirrors gmcp-variables.js flattenValue. The name is built incrementally on
+ * the way down rather than re-normalising the whole path at every node, which
+ * for a large inventory list was the bulk of each frame's handling time.
+ */
+function flattenValue(gmcpVariables: Map<string, string>, name: string, value: unknown): void {
   if (value === undefined) return;
 
   if (value === null || typeof value !== "object") {
-    setGmcpVariableEntry(gmcpVariables, parts, value);
+    setGmcpVariableEntry(gmcpVariables, name, value);
     return;
   }
 
-  setGmcpVariableEntry(gmcpVariables, parts, value);
+  setGmcpVariableEntry(gmcpVariables, name, value);
 
   if (Array.isArray(value)) {
     value.forEach((item, index) => {
-      flattenValue(gmcpVariables, [...parts, String(index)], item);
+      flattenValue(gmcpVariables, childVariableName(name, String(index)), item);
     });
     return;
   }
 
   Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
-    flattenValue(gmcpVariables, [...parts, key], item);
+    flattenValue(gmcpVariables, childVariableName(name, key), item);
   });
 }
 
@@ -190,7 +212,7 @@ export function createAutomationRuntimeState(
         .filter(Boolean);
 
       if (!packageParts.length) return;
-      flattenValue(gmcpVariables, packageParts, data === undefined ? "" : data);
+      flattenValue(gmcpVariables, variableNameFor(packageParts), data === undefined ? "" : data);
     },
 
     resetGmcpVariables(): void {

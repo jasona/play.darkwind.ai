@@ -69,10 +69,19 @@ function deepFreezeLocalDefinitions(definitions: LocalDefinitions): LocalDefinit
   };
 }
 
+// Objects this function has already walked. Snapshots are rebuilt by spreading
+// the previous one, so most of a new snapshot is subtrees frozen on an earlier
+// publish; skipping them keeps the per-packet cost proportional to what changed.
+const deepFrozen = new WeakSet<object>();
+
 export function deepFreeze<T>(value: T): T {
   if (value === null || typeof value !== "object") {
     return value;
   }
+  if (deepFrozen.has(value)) {
+    return value;
+  }
+  deepFrozen.add(value);
 
   Object.freeze(value);
 
