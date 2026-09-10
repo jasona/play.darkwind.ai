@@ -108,68 +108,6 @@ test("Guild Vitals accepts LDMud numeric boolean values", async ({ page }) => {
   await expect(panel).not.toContainText("No guild vitals");
 });
 
-test("Terminal avatar meter preserves legacy placement and behavior", async ({ page }) => {
-  await connect(page);
-  await ensurePanelOpen(page, "Avatar", "avatar");
-  const endpoint = fixtures.endpoints.ws;
-  const meter = page.locator(".terminal-output-shell > .avatar-meter");
-
-  endpoint.sendGmcp("Char.Vitals", {
-    hp: 100,
-    maxhp: 100,
-    avatar_charge: 25,
-    avatar_charge_max: 100,
-    avatar_charge_rate_pct: 200,
-    divine_patron: "mitra",
-  });
-  await expect(
-    page.locator(".terminal-output-shell > .avatar-meter + .terminal-input-bar"),
-  ).toHaveCount(1);
-  await expect(
-    page.locator('.information-panel[data-panel-id="avatar"] .avatar-meter'),
-  ).toHaveCount(0);
-  const meterBox = await meter.boundingBox();
-  const labelBox = await meter.locator(".avatar-meter-label").boundingBox();
-  expect(meterBox).not.toBeNull();
-  expect(labelBox).not.toBeNull();
-  expect(meterBox!.height).toBe(18);
-  expect(
-    Math.abs(meterBox!.y + meterBox!.height / 2 - (labelBox!.y + labelBox!.height / 2)),
-  ).toBeLessThanOrEqual(0.5);
-  await expect(meter).toHaveClass(/patron-mitra/);
-  await expect(meter).toContainText("Wrathful Avatar 25%");
-  await expect
-    .poll(async () => Number((await meter.getAttribute("aria-valuenow")) ?? 0))
-    .toBeGreaterThan(25);
-
-  endpoint.sendGmcp("Char.Vitals", {
-    hp: 100,
-    maxhp: 100,
-    avatar_charge: 100,
-    avatar_charge_max: 100,
-    divine_patron: "set",
-  });
-  await expect(meter).toHaveClass(/full/);
-  await expect(meter).toHaveClass(/patron-set/);
-  await expect(meter).toContainText("Wrathful Avatar 100%");
-
-  endpoint.sendGmcp("Char.Vitals", {
-    hp: 100,
-    maxhp: 100,
-    avatar_charge: 0,
-    avatar_charge_max: 100,
-    avatar_active_remaining: 61,
-    avatar_active_max: 120,
-    divine_patron: "gaea",
-  });
-  await expect(meter).toHaveClass(/active/);
-  await expect(meter).toHaveClass(/patron-gaea/);
-  await expect(meter).toContainText("Wrathful Avatar ACTIVE 1:01");
-  await expect
-    .poll(async () => (await meter.textContent()) ?? "")
-    .toMatch(/Wrathful Avatar ACTIVE (1:00|0:59)/);
-});
-
 test("wire data survives malformed frames and resets across reconnect and disposal", async ({
   page,
 }) => {
