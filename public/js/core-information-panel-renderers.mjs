@@ -402,7 +402,7 @@ export function avatarChargeMeter(vitals, now = Date.now()) {
     const seconds = active % 60;
     const pct = Math.max(0, Math.min(100, (active / activeMax) * 100));
     return '<div class="avatar-meter visible active' + patronClass + '" role="status" aria-live="polite">' +
-      '<div class="avatar-meter-fill" style="width:' + pct + '%"></div>' +
+      '<div class="avatar-meter-fill" style="transform:scaleX(' + pct / 100 + ')"></div>' +
       '<div class="avatar-meter-label">Wrathful Avatar ACTIVE ' + minutes + ':' + String(seconds).padStart(2, '0') + '</div></div>';
   }
   if (Number.isFinite(charge) && max > 0) {
@@ -414,7 +414,7 @@ export function avatarChargeMeter(vitals, now = Date.now()) {
     const fullClass = displayPct >= 100 ? ' full' : '';
     return '<div class="avatar-meter visible' + fullClass + patronClass + '" role="progressbar" aria-label="Wrathful Avatar charge"' +
       ' aria-live="polite" aria-valuemin="0" aria-valuemax="' + max + '" aria-valuenow="' + Math.floor(predictedCharge) + '">' +
-      '<div class="avatar-meter-fill" style="width:' + pct + '%"></div>' +
+      '<div class="avatar-meter-fill" style="transform:scaleX(' + pct / 100 + ')"></div>' +
       '<div class="avatar-meter-label">Wrathful Avatar ' + displayPct + '%</div></div>';
   }
   return '';

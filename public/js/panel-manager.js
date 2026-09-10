@@ -2649,7 +2649,7 @@ export const panelManager = {
     const label = meter.querySelector('.avatar-meter-label');
     const max = Math.max(this._avatarActiveMaxSec, remaining, 1);
     const pct = Math.max(0, Math.min(100, (remaining / max) * 100));
-    if (fill) fill.style.width = pct + '%';
+    if (fill) fill.style.transform = 'scaleX(' + pct / 100 + ')';
     if (label) {
       const minutes = Math.floor(remaining / 60);
       const seconds = remaining % 60;
@@ -2681,7 +2681,7 @@ export const panelManager = {
     meter.classList.add('visible');
     meter.classList.toggle('full', displayPct >= 100);
     meter.classList.remove('active');
-    if (fill) fill.style.width = pct + '%';
+    if (fill) fill.style.transform = 'scaleX(' + pct / 100 + ')';
     if (label) label.textContent = 'Wrathful Avatar ' + displayPct + '%';
     this._notifyAvatarMeterLayoutIfChanged(meter, wasVisible);
 
@@ -2751,7 +2751,7 @@ export const panelManager = {
         this._avatarChargeSync = null;
         const fill = meter.querySelector('.avatar-meter-fill');
         const label = meter.querySelector('.avatar-meter-label');
-        if (fill) fill.style.width = pct + '%';
+        if (fill) fill.style.transform = 'scaleX(' + pct / 100 + ')';
         if (label) label.textContent = 'Wrathful Avatar ' + Math.floor(pct) + '%';
       }
     }
