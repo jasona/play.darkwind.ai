@@ -28,6 +28,11 @@ export function createTerminalOutputCore({
     : createTerminalOutputModel({ processLine, onOutputLine, onClear });
   const model = ownedModel ?? { subscribe: subscribeOutput, clear: clearOutput };
   const pendingLines = new Map();
+  // Latest record per line id, and the ids whose DOM is behind the model. A
+  // streaming line is upserted once per ANSI fragment; painting it on the
+  // next frame instead of per upsert turns that churn into one rebuild.
+  const latestRecords = new Map();
+  const dirtyRecords = new Map();
   const lineElements = new Map();
   const historyLineElements = new Map();
   const liveLineElements = new Map();
@@ -49,6 +54,9 @@ export function createTerminalOutputCore({
   const isAtBottom = (element) =>
     element.scrollTop + element.clientHeight >= element.scrollHeight - BOTTOM_THRESHOLD;
   const isSplitMode = () => behavior === 'split' && historyOutput && liveOutput;
+  // The history and live copies of the stream only exist while the split
+  // behaviour is on; the default pause behaviour keeps one DOM tree.
+  const copiesActive = () => Boolean(isSplitMode());
   const clampSplitRatio = (value) => {
     const ratio = Number(value);
     return Number.isFinite(ratio) ? Math.max(0.2, Math.min(0.8, ratio)) : 0.6;
@@ -70,6 +78,15 @@ export function createTerminalOutputCore({
     if (animationFrame) {
       cancelAnimationFrame(animationFrame);
       animationFrame = 0;
+    }
+    if (dirtyRecords.size) {
+      for (const record of dirtyRecords.values()) {
+        for (const elements of [lineElements, historyLineElements, liveLineElements]) {
+          const line = elements.get(record.id);
+          if (line) paintLine(record, line);
+        }
+      }
+      dirtyRecords.clear();
     }
     for (const [host, lines] of pendingLines) {
       if (!lines.length) continue;
@@ -113,25 +130,52 @@ export function createTerminalOutputCore({
       line.append(rendered);
     }
   };
-  const renderRecordInto = (record, elements, host) => {
-    let line = elements.get(record.id);
-    if (!line) {
-      line = document.createElement('div');
-      elements.set(record.id, line);
-      queueLine(host, line);
-    }
+  const paintLine = (record, line) => {
     line.className = `output-line${record.cssClass ? ` ${record.cssClass}` : ''}`;
     if (record.complete) line.dataset.lineId = String(record.id);
     else delete line.dataset.lineId;
     line.replaceChildren();
     for (const fragment of record.fragments) appendFragment(line, fragment);
   };
+  // Creates the line element eagerly (so navigation can find it) and leaves
+  // the content to the next frame's flush.
+  const ensureLine = (record, elements, host) => {
+    if (elements.has(record.id)) return;
+    const line = document.createElement('div');
+    elements.set(record.id, line);
+    queueLine(host, line);
+  };
   const renderRecord = (record) => {
-    renderRecordInto(record, lineElements, output);
-    if (historyOutput) renderRecordInto(record, historyLineElements, historyOutput);
-    if (liveOutput) renderRecordInto(record, liveLineElements, liveOutput);
+    latestRecords.set(record.id, record);
+    dirtyRecords.set(record.id, record);
+    ensureLine(record, lineElements, output);
+    if (copiesActive()) {
+      ensureLine(record, historyLineElements, historyOutput);
+      ensureLine(record, liveLineElements, liveOutput);
+    }
+  };
+  // Builds or drops the split copies when the behaviour setting changes.
+  const syncCopies = () => {
+    if (copiesActive()) {
+      if (historyLineElements.size || !latestRecords.size) return;
+      for (const record of latestRecords.values()) {
+        dirtyRecords.set(record.id, record);
+        ensureLine(record, historyLineElements, historyOutput);
+        ensureLine(record, liveLineElements, liveOutput);
+      }
+      scheduleRender();
+      return;
+    }
+    if (!historyLineElements.size && !liveLineElements.size) return;
+    for (const [host, elements] of [[historyOutput, historyLineElements], [liveOutput, liveLineElements]]) {
+      pendingLines.delete(host);
+      elements.clear();
+      host?.replaceChildren();
+    }
   };
   const removeRecord = (id) => {
+    latestRecords.delete(id);
+    dirtyRecords.delete(id);
     for (const elements of [lineElements, historyLineElements, liveLineElements]) {
       const line = elements.get(id);
       for (const lines of pendingLines.values()) {
@@ -144,6 +188,8 @@ export function createTerminalOutputCore({
   };
   const clearDom = () => {
     pendingLines.clear();
+    latestRecords.clear();
+    dirtyRecords.clear();
     lineElements.clear();
     historyLineElements.clear();
     liveLineElements.clear();
@@ -285,6 +331,7 @@ export function createTerminalOutputCore({
     clear,
     configure({ scrollbackBehavior, scrollbackSplitRatio, screenReaderMode: nextScreenReaderMode } = {}) {
       behavior = scrollbackBehavior === 'split' ? 'split' : 'pause';
+      syncCopies();
       splitRatio = clampSplitRatio(scrollbackSplitRatio);
       screenReaderMode = nextScreenReaderMode === true;
       if (!screenReaderMode) {
@@ -302,9 +349,9 @@ export function createTerminalOutputCore({
       if (disposed || !Number.isSafeInteger(id)) return false;
       const elements = splitActive ? historyLineElements : lineElements;
       const target = splitActive ? historyOutput : output;
+      renderPending();
       const line = elements.get(id);
       if (!line || line.dataset.lineId === undefined) return false;
-      renderPending();
       targetLine?.classList.remove('output-line-mention-target');
       targetLine = line;
       targetOutput = target;

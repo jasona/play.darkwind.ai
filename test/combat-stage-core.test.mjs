@@ -1,0 +1,268 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+const {
+  ACTION_DURATION_MS,
+  buildAction,
+  buildSceneAction,
+  computeStageLayout,
+  createSeededRandom,
+  idleOffset,
+  lungeCurve,
+  resolveActionSides,
+  resolveStageBackdrop,
+  sampleAction,
+  sampleSceneAction,
+  sceneLayout,
+  targetEntrance,
+} = await import('../public/js/combat-stage-core.mjs');
+
+const view = {
+  player: { id: 'self', name: 'Acer' },
+  target: { id: 'actor-2', name: 'an ash drake' },
+};
+
+function event(overrides = {}) {
+  return {
+    seq: 18,
+    kind: 'attack',
+    perspective: 'outgoing',
+    actorId: 'self',
+    targetId: 'actor-2',
+    result: 'hit',
+    damage: 42,
+    ...overrides,
+  };
+}
+
+test('layout keeps the tokens inside the stage at any size', () => {
+  for (const [w, h] of [[120, 80], [320, 180], [900, 420], [1600, 300]]) {
+    const layout = computeStageLayout(w, h);
+    assert.ok(layout.radius >= 22);
+    assert.ok(layout.player.x - layout.radius >= 0, 'player token fits: ' + w + 'x' + h);
+    assert.ok(layout.target.x + layout.radius <= w, 'target token fits: ' + w + 'x' + h);
+    assert.ok(layout.player.y + layout.radius <= h, 'token bottom fits: ' + w + 'x' + h);
+    assert.ok(layout.player.x < layout.target.x);
+  }
+});
+
+test('backdrop resolves room terrain to a shipped tile and never concatenates server text', () => {
+  assert.deepEqual(resolveStageBackdrop({ terrain: 'forest' }),
+    { terrain: 'forest', tile: '/assets/tiles/forest.jpg', image: '' });
+  assert.deepEqual(resolveStageBackdrop({ environment: ['dark', 'underground cave'] }),
+    { terrain: 'underground', tile: '/assets/tiles/underground.jpg', image: '' });
+  assert.deepEqual(resolveStageBackdrop({ terrain: '../../etc/passwd' }),
+    { terrain: 'outside', tile: '/assets/tiles/outside.jpg', image: '' });
+  assert.deepEqual(resolveStageBackdrop(null),
+    { terrain: 'outside', tile: '/assets/tiles/outside.jpg', image: '' });
+});
+
+test('perspective decides sides before actor ids, and observed fights fall back to ids', () => {
+  assert.deepEqual(resolveActionSides(event(), view), { actor: 'player', impact: 'target' });
+  assert.deepEqual(resolveActionSides(event({ perspective: 'incoming', actorId: 'actor-2', targetId: 'self' }), view),
+    { actor: 'target', impact: 'player' });
+  // A stale or mixed server marks the wrong ids but says "incoming": the
+  // player still takes the hit.
+  assert.deepEqual(resolveActionSides(event({ perspective: 'incoming' }), view),
+    { actor: 'target', impact: 'player' });
+  const observedView = {
+    player: { id: 'actor-9', name: 'Bryn' },
+    target: { id: 'actor-2', name: 'an ash drake' },
+  };
+  assert.deepEqual(resolveActionSides(event({ perspective: 'observed', actorId: 'actor-2', targetId: 'actor-9' }), observedView),
+    { actor: 'target', impact: 'player' });
+  assert.deepEqual(resolveActionSides(event({ perspective: 'observed', actorId: 'nobody', targetId: 'nobody' }), observedView),
+    { actor: '', impact: '' });
+});
+
+test('buildAction rejects events it cannot stage and seeds particles deterministically', () => {
+  assert.equal(buildAction(null, view), null);
+  assert.equal(buildAction(event({ result: '' }), view), null);
+  assert.equal(buildAction(event({ perspective: 'observed', actorId: 'x', targetId: 'y' }), view), null);
+
+  const hit = buildAction(event(), view, 1000);
+  assert.equal(hit.startedAt, 1000);
+  assert.equal(hit.duration, ACTION_DURATION_MS);
+  assert.equal(hit.landed, true);
+  assert.equal(hit.critical, false);
+  assert.equal(hit.damage, 42);
+  assert.ok(hit.particles.length > 0);
+  const again = buildAction(event(), view, 5000);
+  assert.deepEqual(again.particles, hit.particles, 'same seq gives the same burst');
+
+  const critical = buildAction(event({ result: 'critical', seq: 19 }), view);
+  assert.ok(critical.particles.length > hit.particles.length);
+  const miss = buildAction(event({ result: 'miss', damage: undefined }), view);
+  assert.equal(miss.particles.length, 0);
+  assert.equal(miss.damage, null, 'an undefined damage value is not a number');
+  const noDamage = buildAction({ ...event(), damage: undefined }, view);
+  assert.equal(noDamage.damage, null);
+});
+
+test('seeded random is stable and bounded', () => {
+  const a = createSeededRandom(42);
+  const b = createSeededRandom(42);
+  for (let i = 0; i < 20; i++) {
+    const value = a();
+    assert.equal(value, b());
+    assert.ok(value >= 0 && value < 1);
+  }
+});
+
+test('lunge curve leaves and returns to rest', () => {
+  assert.equal(lungeCurve(0), 0);
+  assert.ok(lungeCurve(0.42) > 0.99);
+  assert.ok(lungeCurve(0.2) > 0 && lungeCurve(0.2) < 1);
+  assert.ok(Math.abs(lungeCurve(1)) < 1e-9);
+});
+
+test('an outgoing hit lunges the player, recoils the target, and floats the number', () => {
+  const action = buildAction(event(), view, 0);
+  const early = sampleAction(action, 60);
+  assert.equal(early.active, true);
+  assert.ok(early.player.x > 0, 'player moves toward the target');
+  assert.equal(early.target.x, 0, 'no contact yet');
+  assert.equal(early.effects.length, 0);
+  assert.equal(early.number, null);
+
+  const contact = sampleAction(action, ACTION_DURATION_MS * 0.2);
+  assert.ok(contact.target.x > 0, 'target recoils away from the player');
+  assert.ok(contact.target.flash > 0);
+  assert.ok(contact.shake > 0 && contact.shake < 1, 'target-side hits shake lightly');
+  assert.equal(contact.flash, 0, 'no screen flash when the enemy takes the hit');
+  assert.deepEqual(contact.effects.map((effect) => effect.type), ['slash', 'burst']);
+  assert.equal(contact.effects[0].side, 'target');
+  assert.equal(contact.number.side, 'target');
+  assert.equal(contact.number.value, 42);
+
+  const late = sampleAction(action, ACTION_DURATION_MS * 0.9);
+  assert.ok(late.number.rise > contact.number.rise, 'number keeps rising');
+  assert.ok(late.number.alpha < contact.number.alpha, 'number fades out');
+
+  const done = sampleAction(action, ACTION_DURATION_MS + 1);
+  assert.equal(done.active, false);
+  assert.equal(done.effects.length, 0);
+});
+
+test('an incoming critical shakes and flashes the player side', () => {
+  const action = buildAction(event({ perspective: 'incoming', result: 'critical', damage: 77 }), view, 0);
+  const contact = sampleAction(action, ACTION_DURATION_MS * 0.18);
+  assert.ok(contact.target.x < 0, 'enemy lunges left');
+  assert.ok(contact.player.x < 0, 'player is knocked left');
+  assert.ok(contact.shake > 1, 'critical incoming shakes hardest');
+  assert.ok(contact.flash > 0);
+  assert.equal(contact.number.side, 'player');
+  assert.equal(contact.number.critical, true);
+  assert.equal(contact.badge.result, 'critical');
+});
+
+test('misses, dodges, and absorbs stage their own effects without damage numbers', () => {
+  const at = ACTION_DURATION_MS * 0.3;
+  const miss = sampleAction(buildAction({ ...event({ result: 'miss' }), damage: undefined }, view, 0), at);
+  assert.deepEqual(miss.effects.map((effect) => effect.type), ['whiff']);
+  assert.equal(miss.number, null);
+  assert.equal(miss.shake, 0);
+  assert.equal(miss.badge.result, 'miss');
+
+  const dodge = sampleAction(buildAction({ ...event({ result: 'dodge' }), damage: undefined }, view, 0), at);
+  assert.deepEqual(dodge.effects.map((effect) => effect.type), ['ghost']);
+  assert.ok(dodge.target.x > 0 && dodge.target.alpha < 1, 'target slips aside and ghosts');
+
+  const absorb = sampleAction(buildAction({ ...event({ result: 'absorb', absorbed: 9 }), damage: undefined }, view, 0), at);
+  assert.deepEqual(absorb.effects.map((effect) => effect.type), ['shield']);
+  assert.equal(absorb.number, null);
+});
+
+test('reduced motion removes movement but keeps the outcome readable', () => {
+  const action = buildAction(event({ perspective: 'incoming', result: 'critical' }), view, 0);
+  const sample = sampleAction(action, ACTION_DURATION_MS * 0.3, { reducedMotion: true });
+  assert.equal(sample.player.x, 0);
+  assert.equal(sample.target.x, 0);
+  assert.equal(sample.shake, 0);
+  assert.equal(sample.flash, 0);
+  assert.equal(sample.number.rise, 0);
+  assert.equal(sample.number.alpha, 1);
+  assert.equal(sample.badge.result, 'critical');
+  const burst = sample.effects.find((effect) => effect.type === 'burst');
+  assert.deepEqual(burst.particles, [], 'no particle spray under reduced motion');
+  assert.deepEqual(idleOffset('player', 1234, true), { x: 0, y: 0 });
+  assert.notEqual(idleOffset('player', 1234, false).y, 0);
+});
+
+test('a room image rides ahead of the terrain tile as the backdrop', () => {
+  assert.deepEqual(resolveStageBackdrop({ terrain: 'forest' }, { url: 'https://media.example/clearing.png' }),
+    { terrain: 'forest', tile: '/assets/tiles/forest.jpg', image: 'https://media.example/clearing.png' });
+  assert.equal(resolveStageBackdrop({ terrain: 'forest' }, '/room/42.jpg').image, '/room/42.jpg', 'root-relative art is fine');
+  assert.equal(resolveStageBackdrop({ terrain: 'forest' }, 'javascript:alert(1)').image, '', 'only http(s) or root-relative addresses are drawn');
+  assert.equal(resolveStageBackdrop({ terrain: 'forest' }, { url: 42 }).image, '');
+  assert.equal(resolveStageBackdrop(null, null).image, '');
+});
+
+test('the scene layout centres a lone player and steps them left as the opponent arrives', () => {
+  const layout = computeStageLayout(1000, 400);
+  const solo = sceneLayout(layout, 0);
+  assert.equal(solo.player.x, 500, 'alone, the player stands centre stage');
+  assert.equal(solo.player.y, layout.player.y);
+  assert.deepEqual(solo.target, layout.target, 'the opponent slot does not move');
+  const duel = sceneLayout(layout, 1);
+  assert.equal(duel.player.x, layout.player.x, 'a present opponent puts the player in the duel position');
+  const mid = sceneLayout(layout, 0.5);
+  assert.ok(mid.player.x > layout.player.x && mid.player.x < 500, 'the step is gradual');
+  assert.equal(sceneLayout(layout, 7).duel, 1, 'presence is clamped');
+  assert.equal(sceneLayout(layout, NaN).player.x, 500);
+});
+
+test('the opponent drops in from above and fades up to full presence', () => {
+  assert.deepEqual(targetEntrance(0, false), { alpha: 0, y: -1.4, scale: 0.86 });
+  const half = targetEntrance(0.5, false);
+  assert.ok(half.alpha > 0 && half.alpha <= 1);
+  assert.ok(half.y < 0 && half.y > -1.4, 'still above the ground line');
+  assert.ok(half.scale > 0.86 && half.scale < 1);
+  assert.deepEqual(targetEntrance(1, false), { alpha: 1, y: 0, scale: 1 });
+  assert.deepEqual(targetEntrance(0.3, true), { alpha: 1, y: 0, scale: 1 }, 'reduced motion cuts straight in');
+  assert.deepEqual(targetEntrance(0, true), { alpha: 0, y: 0, scale: 1 });
+});
+
+test('a look glances left, turns back, and shades the eyes before settling', () => {
+  const action = buildSceneAction({ kind: 'look', seq: 3 }, 1000);
+  assert.equal(action.duration, 1500);
+  assert.equal(action.facing, 1);
+  const early = sampleSceneAction(action, 1000 + 1500 * 0.05);
+  assert.equal(early.facing, 0, 'the figure keeps its rest facing at first');
+  const glance = sampleSceneAction(action, 1000 + 1500 * 0.3);
+  assert.equal(glance.facing, -1, 'then turns to glance left');
+  assert.equal(glance.phase, null);
+  const shade = sampleSceneAction(action, 1000 + 1500 * 0.7);
+  assert.equal(shade.facing, 1);
+  assert.equal(shade.phase.to, 'look');
+  assert.equal(shade.phase.t, 1);
+  const settle = sampleSceneAction(action, 1000 + 1500 * 0.93);
+  assert.equal(settle.phase.from, 'look');
+  assert.equal(settle.phase.to, 'idle');
+  assert.ok(settle.active);
+  const done = sampleSceneAction(action, 2500);
+  assert.equal(done.active, false);
+  assert.deepEqual([done.x, done.y, done.alpha, done.facing, done.phase], [0, 0, 1, 0, null]);
+  assert.equal(sampleSceneAction(action, 1300, { reducedMotion: true }).facing, 0, 'reduced motion holds still');
+});
+
+test('a walk enters from the edge opposite its facing, striding, and settles at the rest spot', () => {
+  const west = buildSceneAction({ kind: 'walk', facing: -1 }, 0);
+  const start = sampleSceneAction(west, 0);
+  assert.ok(start.x > 1.5, 'a westward walk starts off stage right: ' + start.x);
+  assert.equal(start.alpha, 0);
+  assert.equal(start.facing, -1);
+  assert.equal(start.phase.from, 'stepA');
+  const mid = sampleSceneAction(west, 450);
+  assert.ok(mid.x > 0 && mid.x < start.x, 'still arriving');
+  assert.equal(mid.alpha, 1);
+  assert.ok(['stepA', 'stepB'].includes(mid.phase.from) && ['stepA', 'stepB'].includes(mid.phase.to));
+  const late = sampleSceneAction(west, 850);
+  assert.equal(late.x, 0, 'home before the settle finishes');
+  assert.equal(late.phase.to, 'idle');
+  const east = buildSceneAction({ kind: 'walk', facing: 1 }, 0);
+  assert.ok(sampleSceneAction(east, 0).x < -1.5, 'an eastward walk starts off stage left');
+  assert.equal(sampleSceneAction(east, 0).facing, 1);
+  assert.equal(buildSceneAction({ kind: 'dance' }, 0), null, 'unknown activities are ignored');
+  assert.equal(buildSceneAction(null, 0), null);
+});

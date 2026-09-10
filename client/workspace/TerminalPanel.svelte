@@ -8,8 +8,6 @@
   import { OUTPUT_SCROLLBACK_PRESETS } from "../../public/js/constants.js";
   // @ts-expect-error The reusable imperative terminal core is legacy JavaScript.
   import { createTerminalOutputCore } from "../../public/js/terminal-output-core.mjs";
-  // @ts-expect-error The shared meter renderer is legacy-compatible JavaScript.
-  import { avatarChargeMeter } from "../../public/js/core-information-panel-renderers.mjs";
   import {
     createTerminalIsland,
     registerTerminalIsland,
@@ -38,7 +36,6 @@
   let batchDialog = $state<HTMLDialogElement>();
   let batchInput = $state<HTMLTextAreaElement>();
   let batchForm = $state<HTMLFormElement>();
-  let avatarMeterHtml = $state("");
   let island: TerminalIsland | undefined;
 
   function focusCommandInput(event: MouseEvent): void {
@@ -159,11 +156,6 @@
       scheduleGeometry();
     };
     window.addEventListener("darkflow:client-settings-changed", refreshTerminalSettings);
-    const renderAvatarMeter = () => {
-      avatarMeterHtml = avatarChargeMeter(session.information.getSnapshot().vitals);
-    };
-    const unsubscribeAvatarMeter = session.information.subscribe(renderAvatarMeter);
-    const avatarMeterTicker = window.setInterval(renderAvatarMeter, 1000);
     const unregisterLineNavigator = registerLineNavigator?.(terminal.navigateToLine);
     const input = createTerminalInputController({
       session,
@@ -183,8 +175,6 @@
 
     return () => {
       window.removeEventListener("darkflow:client-settings-changed", refreshTerminalSettings);
-      unsubscribeAvatarMeter();
-      window.clearInterval(avatarMeterTicker);
       outputShell.removeEventListener("click", focusCommandInput);
       geometryObserver.disconnect();
       if (geometryFrame) cancelAnimationFrame(geometryFrame);
@@ -238,9 +228,6 @@
           tabindex="-1"
         ></div>
       </div>
-      <!-- The shared renderer only interpolates numeric and allow-listed values. -->
-      <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-      {@html avatarMeterHtml}
       <div class="terminal-input-bar">
         <input
           bind:this={commandInput}

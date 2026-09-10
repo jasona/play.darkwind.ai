@@ -14,6 +14,7 @@ import type {
 } from "./types";
 
 const gmcpTextDecoder = new TextDecoder();
+const utf8Encoder = new TextEncoder();
 
 const WS_CONNECTING = 0;
 const WS_OPEN = 1;
@@ -299,7 +300,7 @@ export function createSessionTransport(
               kind: "text",
               size: event.data.length,
             });
-            health.recordInboundText(at, new TextEncoder().encode(event.data).byteLength);
+            health.recordInboundText(at, utf8Encoder.encode(event.data).byteLength);
             callbacks.onText(event.data);
             reconnect.scheduleLostTransmissionRecovery(event.data, health);
           } else {
@@ -438,6 +439,12 @@ export function createSessionTransport(
         health.noteOutboundActivity(kind, { ...metadata, size }, liveSocket);
         liveSocket.send(payload);
         health.recordBufferedAmount(liveSocket);
+        // Every command the player sends, after aliases and automation, so
+        // session runtimes can react to what the player is doing without
+        // owning the input path.
+        if (kind === "command" && typeof payload === "string") {
+          eventBus.publish("transport:outbound-command", { text: payload });
+        }
         return true;
       } catch (error) {
         health.lastErrorAt = now();

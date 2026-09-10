@@ -847,6 +847,7 @@
             ><input type="checkbox" bind:checked={settings.settingsBackupPromptEnabled} /> Ask before
             closing changed settings</label
           >{#if open}<DefinitionEditor {session} kind="keyMappings" />{/if}
+          {#if open}<DefinitionEditor {session} kind="commandButtons" />{/if}
         </div>
         <div
           class="settings-panel"

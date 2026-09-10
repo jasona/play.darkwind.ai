@@ -26,6 +26,10 @@ import { createSessionIde } from "./ide";
 import { createSessionNotifications } from "./notifications";
 import { createSessionAudio, type RetainedSoundManager } from "./audio";
 import { createSessionCombat } from "./combat";
+import { createSessionActivity } from "./activity";
+import { createSessionCommandBoard } from "./command-board";
+import { createSessionDps } from "./dps";
+import { createSessionFishingAuto } from "./fishing-auto";
 import { createSessionTutorial } from "./tutorial";
 import { createSessionVisualEffects } from "./visual-effects";
 import { createSessionGmcpDiagnostics } from "./gmcp-diagnostics";
@@ -211,6 +215,7 @@ export function createSessionFromState(
   const information = createSessionInformation(gmcp, scope, eventBus);
   const interactions = createSessionInteractions(gmcp, scope, eventBus, transport);
   const combat = createSessionCombat(gmcp, scope, eventBus, information);
+  const dps = createSessionDps(gmcp, scope, eventBus);
   const tutorial = createSessionTutorial(gmcp, scope, eventBus);
   const visualEffects = createSessionVisualEffects(gmcp, scope, eventBus, {
     ...(deps.now !== undefined ? { now: deps.now } : {}),
@@ -227,6 +232,22 @@ export function createSessionFromState(
     (command) =>
       transport.send(command, { kind: "command", size: command.length, preview: command }),
   );
+  const activity = createSessionActivity(scope, eventBus, world, {
+    ...(deps.now !== undefined ? { now: deps.now } : {}),
+  });
+  const fishingAuto = createSessionFishingAuto(
+    scope,
+    eventBus,
+    interactions,
+    (command) =>
+      transport.send(command, { kind: "command", size: command.length, preview: command }),
+    () => transport.state === "connected",
+    { storage: deps.storage, storageKey: `darkflow-autofish:${characterProfileId}` },
+  );
+  const commandBoard = createSessionCommandBoard(scope, configuration, {
+    storage: deps.storage,
+    storageKey: `darkflow-command-board:${characterProfileId}`,
+  });
   const gmcpDiagnostics = createSessionGmcpDiagnostics(gmcp, scope, world, {
     ...(deps.now !== undefined ? { now: deps.now } : {}),
   });
@@ -285,9 +306,21 @@ export function createSessionFromState(
     notifications,
     audio,
     combat,
+    dps,
+    activity,
+    fishingAuto,
+    commandBoard,
     tutorial,
     visualEffects,
     gmcpDiagnostics,
+  });
+
+  // The Auto-Angler reports through the terminal: notices as system lines,
+  // and every command it sends as an echo, so the player can audit the run.
+  fishingAuto.subscribeMessages((message) => {
+    if (message.kind === "echo") {
+      session.terminal.appendOutput(`> ${message.text}\n`, "echo-line");
+    } else session.terminal.appendSystemMessage(message.text);
   });
 
   return {

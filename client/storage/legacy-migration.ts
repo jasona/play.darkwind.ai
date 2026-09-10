@@ -367,7 +367,8 @@ export function convertLegacyLocalDefinitions(
   const timers = convertEntries(scope.timers, convertTimer);
   const keyMappings = convertEntries(settings.keyMappings, normalizeKeyMapping);
   if (!aliases || !triggers || !highlights || !functions || !timers || !keyMappings) return null;
-  return { aliases, triggers, highlights, functions, timers, keyMappings };
+  // Legacy exports predate command buttons; the character keeps its own.
+  return { aliases, triggers, highlights, functions, timers, keyMappings, commandButtons: [] };
 }
 
 function extractAliases(scope: Record<string, unknown> | undefined): AliasDefinition[] {

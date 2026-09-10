@@ -12,6 +12,7 @@ The app is intentionally lightweight: Express serves static files, the browser c
 - **Dockable interface**: left/right sidebars, floating panels, drag/drop ordering, snapping, collapse/close controls, mobile panel sheet, and persisted panel layout.
 - **Curated backgrounds**: selectable workspace artwork repeats horizontally for standard, ultrawide, and super-ultrawide displays.
 - **Player panels**: avatar, status, vitals, worth, stats, room, room image, group, inventory, enemy, chat, quests, achievements, and dynamic server-driven panels.
+- **DPS Meter**: a client-side damage meter computed from the `Darkwind.Combat` event stream, with per-fight and session figures, recent fights, and honest dashes when damage numbers are off. See [docs/dps-meter.md](docs/dps-meter.md).
 - **Map system**: generic `Room.Info` learning plus server-authoritative `Darkwind.MapData2 2` sync, area browsing, safe speedwalk verification, and tile-based rendering.
 - **Server-driven windows**: `Darkwind.Window` modals/panels for login and in-game UI, including forms, buttons, updates, submits, actions, and close notifications.
 - **Builder IDE**: `Darkwind.IDE` opens files in the browser, supports save/compile feedback, diagnostics, and close notifications.

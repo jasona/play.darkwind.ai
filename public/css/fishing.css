@@ -569,3 +569,61 @@
   .fishing-bitebar { width: 120px; height: 8px; }
   .fishing-meter { height: 30px; }
 }
+
+/* Auto-Angler strip and indicator (client/runtime/fishing-auto.ts) */
+.fishing-auto-strip {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 30px;
+  padding: 6px 8px 2px;
+  font-size: 12px;
+}
+.fishing-auto-toggle {
+  min-width: 92px;
+  padding: 4px 10px;
+  border: 1px solid var(--df-border);
+  border-radius: 6px;
+  background: var(--df-panel, var(--df-bg));
+  color: var(--df-text);
+  font-weight: 700;
+  cursor: pointer;
+}
+.fishing-auto-toggle[aria-pressed="true"] {
+  border-color: var(--df-accent);
+  background: var(--df-accent);
+  color: var(--df-bg);
+}
+.fishing-auto-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--df-text);
+  opacity: 0.85;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Who is in control must be unmistakable: border plus a text badge, never
+   colour alone. */
+.fishing-stage[data-auto="on"] {
+  box-shadow: inset 0 0 0 3px var(--df-accent);
+}
+.fishing-auto-badge {
+  position: absolute;
+  z-index: 10;
+  top: 8px;
+  left: 8px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--df-accent);
+  color: var(--df-bg);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+.fishing-stage[data-auto="on"] .fishing-message {
+  right: 44px;
+  left: 64px;
+}

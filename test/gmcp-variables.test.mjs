@@ -99,3 +99,21 @@ test('saved automation variables override matching GMCP variable names', () => {
 
   assert.equal(aliasManager.getAutomationVariables(scopeKey).gmcp_char_vitals_hp, 'manual');
 });
+
+test('GMCP frames are flattened on read, latest payload per package, and stay cumulative across reads', () => {
+  resetGmcpVariables();
+  registerGmcpVariables('Char.Vitals', { hp: 10, stale: 1 });
+  registerGmcpVariables('Char.Vitals', { hp: 20 });
+  registerGmcpVariables('Room.Info', { num: 7 });
+  const first = getGmcpVariables();
+  assert.equal(first.gmcp_char_vitals_hp, '20', 'the newer payload wins before the first read');
+  assert.equal(first.gmcp_char_vitals_stale, undefined, 'keys only in an older unread payload are not kept');
+  assert.equal(first.gmcp_room_info_num, '7');
+  registerGmcpVariables('Char.Vitals', { sp: 5 });
+  const second = getGmcpVariables();
+  assert.equal(second.gmcp_char_vitals_hp, '20', 'variables flattened by an earlier read survive later frames');
+  assert.equal(second.gmcp_char_vitals_sp, '5');
+  assert.deepEqual(listGmcpVariables().map((entry) => entry.name).slice(0, 2), ['gmcp_char_vitals', 'gmcp_char_vitals_hp']);
+  resetGmcpVariables();
+  assert.deepEqual(getGmcpVariables(), {}, 'reset drops queued frames too');
+});

@@ -80,6 +80,15 @@ export function matchAliasDefinitions(rawLine, aliases) {
 }
 
 function compileTrigger(trigger) {
+  if (trigger && typeof trigger === 'object' && compiledTriggerCache.has(trigger)) {
+    return compiledTriggerCache.get(trigger);
+  }
+  const compiled = compileTriggerUncached(trigger);
+  if (trigger && typeof trigger === 'object') compiledTriggerCache.set(trigger, compiled);
+  return compiled;
+}
+
+function compileTriggerUncached(trigger) {
   const source = String(trigger.pattern || '').trim();
   if (!source) return null;
   let pattern = source;
@@ -131,14 +140,51 @@ function cloneStyle(style = {}) {
   return { ...style, fg: style.fg ? { ...style.fg } : null, bg: style.bg ? { ...style.bg } : null };
 }
 
+// Structural equality for a style and its colours, without serialising them:
+// this runs once per character of every highlighted line.
+function sameColor(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) if (a[key] !== b[key]) return false;
+  return true;
+}
+function sameStyle(a, b) {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    if (key === 'fg' || key === 'bg') {
+      if (!sameColor(a[key], b[key])) return false;
+    } else if (a[key] !== b[key]) return false;
+  }
+  return true;
+}
+
+// Compiled patterns keyed by the definition object they came from. Definitions
+// live in the configuration snapshot, so the same object arrives line after
+// line and the RegExp is built once instead of once per line.
+const compiledHighlightCache = new WeakMap();
+const compiledTriggerCache = new WeakMap();
+
+function compileHighlightDefinition(rule) {
+  if (!rule || typeof rule !== 'object') return null;
+  if (compiledHighlightCache.has(rule)) return compiledHighlightCache.get(rule);
+  let compiled = null;
+  try {
+    compiled = { ...rule, regex: new RegExp(rule.patternSource, 'g' + (rule.ignoreCase ? 'i' : '')) };
+  } catch {
+    compiled = null;
+  }
+  compiledHighlightCache.set(rule, compiled);
+  return compiled;
+}
+
 export function compileHighlightDefinitions(rules) {
   return (Array.isArray(rules) ? rules : []).flatMap((rule) => {
     if (rule.enabled === false) return [];
-    try {
-      return [{ ...rule, regex: new RegExp(rule.patternSource, 'g' + (rule.ignoreCase ? 'i' : '')) }];
-    } catch {
-      return [];
-    }
+    const compiled = compileHighlightDefinition(rule);
+    return compiled ? [compiled] : [];
   });
 }
 
@@ -171,7 +217,7 @@ export function applyHighlightDefinitionsToLine(line, rules) {
         style.bg = parseColor(owner.style.bg);
       }
       const previous = fragments.at(-1);
-      if (previous && previous.href === href && JSON.stringify(previous.style) === JSON.stringify(style)) previous.text += character;
+      if (previous && previous.href === href && sameStyle(previous.style, style)) previous.text += character;
       else fragments.push({ text: character, style, href });
     }
   }

@@ -19,6 +19,11 @@
   import InformationPanel from "./InformationPanel.svelte";
   import ConnectionHealthPanel from "./ConnectionHealthPanel.svelte";
   import CombatPanel from "./CombatPanel.svelte";
+  import CommandBoardPanel from "./CommandBoardPanel.svelte";
+  import BuffBarPanel from "./BuffBarPanel.svelte";
+  import GuildBarPanel from "./GuildBarPanel.svelte";
+  import VitalBarPanel from "./VitalBarPanel.svelte";
+  import DpsPanel from "./DpsPanel.svelte";
   import FishingPanel from "./FishingPanel.svelte";
   import IdePanel from "./IdePanel.svelte";
   import MapPanel from "./MapPanel.svelte";
@@ -38,6 +43,7 @@
   import { normalizeMapZoom } from "../../public/js/map-zoom.js";
   import type {
     CompositeWorkspaceSnapshot,
+    PanelPlacement,
     PersistedWorkspaceSnapshot,
     Workspace,
     WorkspacePanelSpec,
@@ -133,10 +139,13 @@
     state: { mapZoom: 1 },
     placement: { kind: "floating", bounds: { left: 40, top: 40, width: 520, height: 420 } },
   };
+  // The Scene: the player's figure in the current room, and the duel when a
+  // fight is on. It keeps the "enemy" id the server-side tutorial and saved
+  // layouts already know.
   const combatPanel: WorkspacePanelSpec = {
     id: "enemy",
     kind: "enemy",
-    title: "Enemy",
+    title: "Scene",
     state: {},
   };
   const chatPanel: WorkspacePanelSpec = {
@@ -151,11 +160,56 @@
     title: "GMCP Debug",
     state: {},
   };
+  const dpsPanel: WorkspacePanelSpec = {
+    id: "dps",
+    kind: "dps",
+    title: "DPS Meter",
+    state: {},
+    minSize: { width: 200, height: 120 },
+  };
+  const commandBoardPanel: WorkspacePanelSpec = {
+    id: "commandBoard",
+    kind: "commandBoard",
+    title: "Command Board",
+    state: {},
+    minSize: { width: 220, height: 100 },
+  };
+  // Single-bar vital readouts: floating, resizable copies of the HP and SP
+  // rows of the Vitals panel, for players who want a big bar of their own
+  // wherever they like. The ids are the ones vital-bar.ts knows.
+  // Guild Resource slots show a meter from Darkwind.GuildVitals by position
+  // (or a pinned id), so the menu never lists resources by guild.
+  const vitalBarPanels: readonly WorkspacePanelSpec[] = [
+    { id: "hpBar", kind: "hpBar", title: "HP Bar", state: {}, minSize: { width: 120, height: 40 } },
+    { id: "spBar", kind: "spBar", title: "SP Bar", state: {}, minSize: { width: 120, height: 40 } },
+    ...[1, 2, 3].map((slot): WorkspacePanelSpec => ({
+      id: `guildBar${slot}`,
+      kind: "guildBar",
+      title: `Guild Resource ${slot}`,
+      state: {},
+      minSize: { width: 120, height: 40 },
+    })),
+    {
+      id: "buffBar",
+      kind: "buffBar",
+      title: "Buff Bar",
+      state: {},
+      minSize: { width: 120, height: 40 },
+    },
+  ];
 
   type PanelMenuGroupName = "Character" | "Progress" | "Social" | "System" | "World";
   type PanelMenuItem = {
     group: PanelMenuGroupName;
-    kind: "information" | "world" | "chat" | "gmcp-debug";
+    kind:
+      | "information"
+      | "world"
+      | "chat"
+      | "dps"
+      | "scene"
+      | "commandBoard"
+      | "vitalBar"
+      | "gmcp-debug";
     panel: WorkspacePanelSpec;
   };
   const informationPanelGroups: Record<InformationPanelId, PanelMenuGroupName> = {
@@ -184,7 +238,15 @@
       panel,
     })),
     ...worldPanels.map((panel): PanelMenuItem => ({ group: "World", kind: "world", panel })),
+    { group: "World", kind: "scene", panel: combatPanel },
     { group: "Social", kind: "chat", panel: chatPanel },
+    { group: "Character", kind: "dps", panel: dpsPanel },
+    ...vitalBarPanels.map((panel): PanelMenuItem => ({
+      group: "Character",
+      kind: "vitalBar",
+      panel,
+    })),
+    { group: "System", kind: "commandBoard", panel: commandBoardPanel },
     ...(debugGmcp
       ? [{ group: "System" as const, kind: "gmcp-debug" as const, panel: gmcpDebugPanel }]
       : []),
@@ -402,7 +464,7 @@
   let rightRail: Scrollview | undefined;
   let leftRailVisible = $state(true);
   let rightRailVisible = $state(true);
-  let workspace: Workspace | undefined;
+  let workspace: (Workspace & WorkspaceInspector) | undefined;
   /** Set once the save pipeline exists; rail edits are not Dockview layout events. */
   let requestSave: (() => void) | undefined;
   let movePanel:
@@ -424,6 +486,9 @@
   let sheetTrigger: HTMLButtonElement | undefined;
   let combatPanelOpen = $state(false);
   let chatPanelOpen = $state(false);
+  let dpsPanelOpen = $state(false);
+  let commandBoardOpen = $state(false);
+  let openVitalBarIds = $state<string[]>([]);
   let gmcpDebugOpen = $state(false);
   let launcherOpen = $state(false);
   let mobilePresentation = $state(false);
@@ -460,8 +525,55 @@
       ownerOf(panel.id)?.hasPanel(panel.id),
     );
     openWorldPanelIds = visibleWorldPanels.map((panel) => panel.id);
-    session.world.setVisiblePanels(visibleWorldPanels.map((panel) => panel.id));
+    combatPanelOpen = workspace?.hasPanel(combatPanel.id) ?? false;
+    // The Scene paints the room's image behind its figures, so while it is
+    // open the room and its art are wanted just as they are for Room Image.
+    const worldSubscriptions = visibleWorldPanels.map((panel) => panel.id);
+    if (combatPanelOpen && !worldSubscriptions.includes("roomImage")) {
+      worldSubscriptions.push("roomImage");
+    }
+    session.world.setVisiblePanels(worldSubscriptions);
     chatPanelOpen = workspace?.hasPanel(chatPanel.id) ?? false;
+    dpsPanelOpen = workspace?.hasPanel(dpsPanel.id) ?? false;
+    commandBoardOpen = workspace?.hasPanel(commandBoardPanel.id) ?? false;
+    openVitalBarIds = vitalBarPanels
+      .filter((panel) => workspace?.hasPanel(panel.id) ?? false)
+      .map((panel) => panel.id);
+  }
+
+  function vitalBarOpen(panel: WorkspacePanelSpec): boolean {
+    return openVitalBarIds.includes(panel.id);
+  }
+
+  // Vital bars float by default, stacked at the bottom-left where the eye
+  // rests near the command line; a rails-off layout splits them under the
+  // terminal instead so they stay reachable on a small screen.
+  async function toggleVitalBarPanel(panel: WorkspacePanelSpec, activate = true): Promise<void> {
+    if (!workspace) return;
+    if (workspace.hasPanel(panel.id)) await workspace.removePanel(panel.id);
+    else {
+      const index = vitalBarPanels.findIndex((candidate) => candidate.id === panel.id);
+      const width = Math.min(280, Math.max(160, host.clientWidth - 16));
+      const height = 64;
+      const terminalInfo = workspace.inspectPanel(terminal.id);
+      workspace.addOrUpdatePanel({
+        ...panel,
+        placement:
+          railsEnabled || !terminalInfo || terminalInfo.floating
+            ? {
+                kind: "floating",
+                bounds: {
+                  left: 12,
+                  top: Math.max(0, host.clientHeight - (height + 12) * (index + 1) - 8),
+                  width,
+                  height,
+                },
+              }
+            : { kind: "grid", direction: "below", referencePanelId: terminal.id },
+      });
+      if (activate) workspace.activatePanel(panel.id);
+    }
+    syncVisiblePanels();
   }
 
   function informationPanelOpen(panel: WorkspacePanelSpec): boolean {
@@ -527,6 +639,90 @@
     syncVisiblePanels();
   }
 
+  async function toggleDpsPanel(activate = true): Promise<void> {
+    if (!workspace) return;
+    if (workspace.hasPanel(dpsPanel.id)) await workspace.removePanel(dpsPanel.id);
+    else {
+      const width = Math.min(340, Math.max(240, host.clientWidth - 16));
+      const height = Math.min(520, Math.max(200, host.clientHeight - 16));
+      workspace.addOrUpdatePanel({
+        ...dpsPanel,
+        placement: railsEnabled
+          ? {
+              kind: "floating",
+              bounds: {
+                left: Math.max(0, host.clientWidth - width - 8),
+                top: Math.max(0, host.clientHeight - height - 8),
+                width,
+                height,
+              },
+            }
+          : { kind: "grid", direction: "right", referencePanelId: terminal.id },
+      });
+      if (activate) workspace.activatePanel(dpsPanel.id);
+    }
+    syncVisiblePanels();
+  }
+
+  // The Command Board sits under the terminal, where the buttons are within
+  // reach of the command line; a floated terminal gets a floating board.
+  async function toggleCommandBoardPanel(activate = true): Promise<void> {
+    if (!workspace) return;
+    if (workspace.hasPanel(commandBoardPanel.id)) await workspace.removePanel(commandBoardPanel.id);
+    else {
+      const terminalInfo = workspace.inspectPanel(terminal.id);
+      const width = Math.min(520, Math.max(260, host.clientWidth - 16));
+      const height = Math.min(220, Math.max(120, host.clientHeight - 16));
+      workspace.addOrUpdatePanel({
+        ...commandBoardPanel,
+        placement:
+          terminalInfo && !terminalInfo.floating
+            ? { kind: "grid", direction: "below", referencePanelId: terminal.id }
+            : {
+                kind: "floating",
+                bounds: {
+                  left: Math.max(0, Math.round((host.clientWidth - width) / 2)),
+                  top: Math.max(0, host.clientHeight - height - 8),
+                  width,
+                  height,
+                },
+              },
+      });
+      if (activate) workspace.activatePanel(commandBoardPanel.id);
+    }
+    syncVisiblePanels();
+  }
+
+  // Where the Scene opens. Under Room Image when that panel is in the grid,
+  // so it never lands on top of the terminal; otherwise to the right of the
+  // terminal. A floating anchor is never used: Dockview cannot split a
+  // floating group, so a panel placed against one becomes a tab inside that
+  // window instead, which is how the panel used to end up hiding a floated
+  // terminal.
+  function scenePlacement(target: Workspace & WorkspaceInspector): PanelPlacement {
+    const roomImage = target.inspectPanel("roomImage");
+    if (roomImage && !roomImage.floating) {
+      return { kind: "grid", direction: "below", referencePanelId: "roomImage" };
+    }
+    const terminalInfo = target.inspectPanel(terminal.id);
+    if (terminalInfo && !terminalInfo.floating) {
+      return { kind: "grid", direction: "right", referencePanelId: terminal.id };
+    }
+    return { kind: "grid", direction: "right" };
+  }
+
+  async function toggleScenePanel(activate = true): Promise<void> {
+    if (!workspace) return;
+    // Closing goes through the panel's close guard so a fight in progress is
+    // handed back to text, the same as the tab's close button.
+    if (workspace.hasPanel(combatPanel.id)) await workspace.requestClosePanel(combatPanel.id);
+    else {
+      workspace.addOrUpdatePanel({ ...combatPanel, placement: scenePlacement(workspace) });
+      if (activate) workspace.activatePanel(combatPanel.id);
+    }
+    syncVisiblePanels();
+  }
+
   async function toggleGmcpDebugPanel(activate = true): Promise<void> {
     if (!workspace || (!debugGmcp && !workspace.hasPanel(gmcpDebugPanel.id))) return;
     if (workspace.hasPanel(gmcpDebugPanel.id)) await workspace.removePanel(gmcpDebugPanel.id);
@@ -556,6 +752,10 @@
     if (item.kind === "information") return informationPanelOpen(item.panel);
     if (item.kind === "world") return worldPanelOpen(item.panel);
     if (item.kind === "gmcp-debug") return gmcpDebugOpen;
+    if (item.kind === "dps") return dpsPanelOpen;
+    if (item.kind === "scene") return combatPanelOpen;
+    if (item.kind === "commandBoard") return commandBoardOpen;
+    if (item.kind === "vitalBar") return vitalBarOpen(item.panel);
     return chatPanelOpen;
   }
 
@@ -563,6 +763,10 @@
     if (item.kind === "information") void toggleInformationPanel(item.panel, false);
     else if (item.kind === "world") void toggleWorldPanel(item.panel, false);
     else if (item.kind === "gmcp-debug") void toggleGmcpDebugPanel(false);
+    else if (item.kind === "dps") void toggleDpsPanel(false);
+    else if (item.kind === "scene") void toggleScenePanel(false);
+    else if (item.kind === "commandBoard") void toggleCommandBoardPanel(false);
+    else if (item.kind === "vitalBar") void toggleVitalBarPanel(item.panel, false);
     else void toggleChatPanel(false);
   }
 
@@ -714,6 +918,8 @@
       enemy: {
         canClose: () => {
           combatPanelOpen = false;
+          // Mid-fight this hands the encounter back to text; between fights
+          // there is no encounter and it is a no-op.
           session.combat.dismissEncounter();
           return true;
         },
@@ -773,6 +979,24 @@
         canClose: () => true,
         collapsible: true,
         component: GmcpDebugPanel,
+        floatable: true,
+        session,
+      },
+      commandBoard: {
+        canClose: () => true,
+        collapsible: true,
+        component: CommandBoardPanel,
+        floatable: true,
+        session,
+      },
+      hpBar: { canClose: () => true, component: VitalBarPanel, floatable: true, session },
+      spBar: { canClose: () => true, component: VitalBarPanel, floatable: true, session },
+      guildBar: { canClose: () => true, component: GuildBarPanel, floatable: true, session },
+      buffBar: { canClose: () => true, component: BuffBarPanel, floatable: true, session },
+      dps: {
+        canClose: () => true,
+        collapsible: true,
+        component: DpsPanel,
         floatable: true,
         session,
       },
@@ -982,7 +1206,16 @@
      * rail membership is whatever `fillRailsWithDefaults` rebuilds.
      */
     const restoreSnapshot = (next: PersistedWorkspaceSnapshot): boolean => {
-      const panels = [terminal, ...informationPanels, ...worldPanels, chatPanel];
+      const panels = [
+        terminal,
+        ...informationPanels,
+        ...worldPanels,
+        chatPanel,
+        dpsPanel,
+        combatPanel,
+        commandBoardPanel,
+        ...vitalBarPanels,
+      ];
       if (next.version === 1) {
         if (!currentWorkspace.restore(next, panels)) return false;
         migrateVersionOneRailPanels(currentWorkspace);
@@ -1091,7 +1324,6 @@
       fishingPanelOpen ||
       areaMapPanelOpen ||
       idePanelOpen ||
-      combatPanelOpen ||
       gmcpDebugOpen;
     const flush = () => {
       if (timer !== undefined) {
@@ -1143,7 +1375,7 @@
       const transientPanelIds = [...serverPanelIds.values()];
       const hadFishingPanel = fishingPanelOpen;
       const hadAreaMapPanel = areaMapPanelOpen;
-      const hadCombatPanel = combatPanelOpen;
+      const hadCombatPanel = currentWorkspace.hasPanel(combatPanel.id);
       if (hadCombatPanel) {
         combatPanelOpen = false;
         session.combat.dismissEncounter();
@@ -1304,6 +1536,19 @@
       }
       if (hasTransientPanels()) cancelPendingSave();
     };
+    const combatPlacement = (): PanelPlacement => scenePlacement(currentWorkspace);
+    // A Scene panel that shares a group with the terminal would only cover it
+    // when activated, so a new fight moves it out instead.
+    const combatPanelCoversTerminal = (): boolean => {
+      const enemy = currentWorkspace.inspectPanel(combatPanel.id);
+      const terminalInfo = currentWorkspace.inspectPanel(terminal.id);
+      return (
+        !!enemy &&
+        !!terminalInfo &&
+        enemy.groupId !== null &&
+        enemy.groupId === terminalInfo.groupId
+      );
+    };
     const syncCombatPanel = (next: typeof combatSnapshot) => {
       combatSnapshot = next;
       if (presentationAllowed && next.shouldPresent) {
@@ -1313,27 +1558,9 @@
         seenCombatEncounter = encounter;
         if (reveal) {
           const focused = document.activeElement;
-          const width = Math.min(580, host.clientWidth || innerWidth);
-          const height = Math.min(465, host.clientHeight || innerHeight);
-          currentWorkspace.addOrUpdatePanel({
-            ...combatPanel,
-            placement:
-              innerWidth <= 700
-                ? { kind: "grid", direction: "right", referencePanelId: terminal.id }
-                : {
-                    kind: "floating",
-                    bounds: {
-                      left: Math.max(0, Math.round(((host.clientWidth || innerWidth) - width) / 2)),
-                      top: Math.max(
-                        0,
-                        Math.round(((host.clientHeight || innerHeight) - height) / 2),
-                      ),
-                      width,
-                      height,
-                    },
-                  },
-          });
-          if (exists) currentWorkspace.activatePanel(combatPanel.id);
+          if (exists && !combatPanelCoversTerminal())
+            currentWorkspace.activatePanel(combatPanel.id);
+          else currentWorkspace.addOrUpdatePanel({ ...combatPanel, placement: combatPlacement() });
           const restoreFocus = () => {
             if (focused instanceof HTMLElement && focused.isConnected) {
               focused.focus({ preventScroll: true });
@@ -1344,10 +1571,9 @@
           requestAnimationFrame(restoreFocus);
         }
         combatPanelOpen = true;
-      } else if (combatPanelOpen) {
-        combatPanelOpen = false;
-        void currentWorkspace.removePanel(combatPanel.id);
       }
+      // When the fight ends the Scene stays: its stage returns to the room
+      // with the player alone, and the next fight pops the opponent back in.
       if (!next.model.active || !next.model.visualEnabled) seenCombatEncounter = "";
       if (hasTransientPanels()) cancelPendingSave();
     };
@@ -1600,7 +1826,7 @@
       {/if}
     </div>
     {#if combatPanelOpen}
-      <button type="button" onclick={() => workspace?.activatePanel(combatPanel.id)}>Enemy</button>
+      <button type="button" onclick={() => workspace?.activatePanel(combatPanel.id)}>Scene</button>
     {/if}
   </div>
   <p bind:this={workspaceStatusEl} class="workspace-status" data-testid="workspace-status">
@@ -1683,17 +1909,36 @@
       >
         {chatPanelOpen ? "Close Chat" : "Open Chat"}
       </button>
-      {#if combatPanelOpen}
+      <button
+        type="button"
+        aria-pressed={dpsPanelOpen}
+        onclick={() => selectPanel(() => void toggleDpsPanel())}
+      >
+        {dpsPanelOpen ? "Close DPS Meter" : "Open DPS Meter"}
+      </button>
+      <button
+        type="button"
+        aria-pressed={commandBoardOpen}
+        onclick={() => selectPanel(() => void toggleCommandBoardPanel())}
+      >
+        {commandBoardOpen ? "Close Command Board" : "Open Command Board"}
+      </button>
+      {#each vitalBarPanels as panel (panel.id)}
         <button
           type="button"
-          onclick={() => selectPanel(() => workspace?.activatePanel(combatPanel.id))}>Enemy</button
+          aria-pressed={vitalBarOpen(panel)}
+          onclick={() => selectPanel(() => void toggleVitalBarPanel(panel))}
         >
-        <button
-          type="button"
-          onclick={() => selectPanel(() => void workspace?.requestClosePanel(combatPanel.id))}
-          >Close Enemy</button
-        >
-      {/if}
+          {vitalBarOpen(panel) ? `Close ${panel.title}` : `Open ${panel.title}`}
+        </button>
+      {/each}
+      <button
+        type="button"
+        aria-pressed={combatPanelOpen}
+        onclick={() => selectPanel(() => void toggleScenePanel())}
+      >
+        {combatPanelOpen ? "Close Scene" : "Open Scene"}
+      </button>
     </div>
   </div>
 </div>

@@ -492,6 +492,7 @@ test("Green PR 2 returns shell bootstrap values without runtime handles", async 
   assert.deepEqual(result.record.shell, {
     gameName: "Example",
     themeKey: "dracula",
+    clientVersion: "test",
     shouldAutoConnect: true,
     zorkOnly: false,
   });

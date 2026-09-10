@@ -3,11 +3,12 @@
   import type { Readable } from "svelte/store";
   import type { SessionCombatSnapshot } from "../runtime/combat.ts";
   import type { Session } from "../runtime/session.ts";
+  import type { SessionWorldSnapshot } from "../runtime/world.ts";
   import type { PanelState } from "./workspace.ts";
-  // @ts-expect-error Retained Combat DOM renderer has no declaration file.
-  import * as combatRenderer from "../../public/js/combat-visual-renderer.mjs";
+  // @ts-expect-error The canvas combat stage is retained JavaScript without a declaration file.
+  import * as combatRenderer from "../../public/js/combat-stage-renderer.mjs";
 
-  const { createCombatVisualRenderer } = combatRenderer;
+  const { createCombatStageRenderer } = combatRenderer;
 
   let {
     panelId,
@@ -21,8 +22,26 @@
   let root: HTMLElement;
   let body: HTMLElement;
 
+  function roomId(world: SessionWorldSnapshot): string {
+    const id = world.room?.num ?? world.room?.id;
+    return id === undefined || id === null ? "" : String(id);
+  }
+
+  // The room's art, only while it belongs to the room the player is in; a
+  // stale image from the previous room must not become this fight's backdrop.
+  function roomImageUrl(world: SessionWorldSnapshot): string {
+    const art = world.roomImage;
+    if (!world.connected || !art) return "";
+    const id = roomId(world);
+    return id && art.roomId === id && art.generation === world.roomGeneration ? art.url : "";
+  }
+
+  function backdropKey(world: SessionWorldSnapshot): string {
+    return String(world.roomGeneration) + ":" + roomImageUrl(world);
+  }
+
   onMount(() => {
-    const renderer = createCombatVisualRenderer(body);
+    const renderer = createCombatStageRenderer(body);
     const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     const syncReducedMotion = (): void => {
       activeSession.combat.setReducedMotion(motionQuery.matches);
@@ -47,8 +66,11 @@
       );
     };
 
+    let lastSnapshot: SessionCombatSnapshot | null = null;
     const render = (snapshot: SessionCombatSnapshot): void => {
+      lastSnapshot = snapshot;
       shouldPresent = snapshot.shouldPresent;
+      const world = activeSession.world.getSnapshot();
       try {
         renderSucceeded =
           renderer.render({
@@ -56,6 +78,16 @@
             enemy: snapshot.enemy,
             vitals: snapshot.vitals,
             avatar: snapshot.avatar,
+            status: snapshot.status,
+            inventory: snapshot.inventory,
+            // Off while the server has visual combat disabled or the player
+            // dismissed this encounter: the stage then shows the room scene
+            // instead of the fight.
+            present: snapshot.shouldPresent,
+            // The stage paints the room's image as the backdrop when one is
+            // showing, and the terrain tile otherwise.
+            room: world.room,
+            roomImage: roomImageUrl(world),
           }) !== false;
         syncReadiness();
       } catch (error) {
@@ -71,8 +103,26 @@
     const sizeObserver = new ResizeObserver(syncReadiness);
     sizeObserver.observe(root);
     const unsubscribe = activeSession.combat.subscribe(render);
+    // Looks and walks from the activity feed play on the idle scene. The
+    // subscription replays the current snapshot on attach, which is skipped
+    // so a remounted panel does not re-enact an old walk.
+    let seenActivitySeq = activeSession.activity.getSnapshot().seq;
+    const unsubscribeActivity = activeSession.activity.subscribe((activity) => {
+      if (activity.seq === seenActivitySeq || !activity.latest) return;
+      seenActivitySeq = activity.seq;
+      renderer.playActivity(activity.latest);
+    });
+    let lastBackdropKey = backdropKey(activeSession.world.getSnapshot());
+    const unsubscribeWorld = activeSession.world.subscribe((world) => {
+      const key = backdropKey(world);
+      if (key === lastBackdropKey) return;
+      lastBackdropKey = key;
+      if (lastSnapshot) render(lastSnapshot);
+    });
     return () => {
       unsubscribe();
+      unsubscribeActivity();
+      unsubscribeWorld();
       sizeObserver.disconnect();
       motionQuery.removeEventListener("change", syncReducedMotion);
       window.removeEventListener("darkflow:workspace-layout-changed", syncReadiness);

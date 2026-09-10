@@ -2,9 +2,9 @@ import type { tags } from "typia";
 
 import type { ConfigSetId } from "./ids";
 
-/** The six shareable configuration-set kinds supported in Phase 1. */
+/** The shareable configuration-set kinds: the six Phase 1 kinds plus command buttons. */
 export type ConfigKind =
-  "aliases" | "triggers" | "highlights" | "functions" | "keyMappings" | "timers";
+  "aliases" | "triggers" | "highlights" | "functions" | "keyMappings" | "timers" | "commandButtons";
 
 /** JSON-safe primitive and structured values used by persisted definitions. */
 export type JsonPrimitive = string | number | boolean | null;
@@ -113,6 +113,19 @@ export interface KeyMappingDefinition {
   command: string;
 }
 
+/**
+ * Command Board button: one command line sent as if typed, with an optional
+ * client-wide shortcut ("Alt+Digit1", "Ctrl+Shift+KeyH", "F5"; see
+ * client/runtime/command-board.ts for the rules).
+ */
+export interface CommandButtonDefinition {
+  id: string;
+  enabled: boolean;
+  label: string;
+  command: string;
+  shortcut: string;
+}
+
 /** Timer definition identity and payload; handles and runtime state are excluded. */
 export interface TimerDefinition {
   id: string;
@@ -170,6 +183,12 @@ export interface TimerConfigurationSet extends ConfigurationSetBase {
   definitions: TimerDefinition[];
 }
 
+/** Shared command-button configuration set. */
+export interface CommandButtonConfigurationSet extends ConfigurationSetBase {
+  kind: "commandButtons";
+  definitions: CommandButtonDefinition[];
+}
+
 /** Discriminated configuration-set union containing exactly one definition kind. */
 export type ConfigurationSet =
   | AliasConfigurationSet
@@ -177,9 +196,10 @@ export type ConfigurationSet =
   | HighlightConfigurationSet
   | FunctionConfigurationSet
   | KeyMappingConfigurationSet
-  | TimerConfigurationSet;
+  | TimerConfigurationSet
+  | CommandButtonConfigurationSet;
 
-/** Ordered shared-set references grouped by the six configuration kinds. */
+/** Ordered shared-set references grouped by configuration kind. */
 export interface ConfigurationSetRefs {
   aliases: ConfigSetId[];
   triggers: ConfigSetId[];
@@ -187,6 +207,7 @@ export interface ConfigurationSetRefs {
   functions: ConfigSetId[];
   keyMappings: ConfigSetId[];
   timers: ConfigSetId[];
+  commandButtons: ConfigSetId[];
 }
 
 /** Character-local definitions that override shared sets during resolution. */
@@ -197,6 +218,7 @@ export interface LocalDefinitions {
   functions: FunctionDefinition[];
   keyMappings: KeyMappingDefinition[];
   timers: TimerDefinition[];
+  commandButtons: CommandButtonDefinition[];
 }
 
 /** Manager-neutral provenance metadata consumed by effective-configuration work. */
@@ -217,7 +239,15 @@ export const CONFIG_KINDS: readonly ConfigKind[] = [
   "functions",
   "keyMappings",
   "timers",
+  "commandButtons",
 ] as const;
+
+/**
+ * Kinds added after the first persisted schema. A stored graph written before
+ * a kind existed has no arrays for it; validation fills them in as empty so
+ * the graph keeps loading (see upgradeApplicationStateInput in validators.ts).
+ */
+export const CONFIG_KINDS_ADDED_AFTER_V1: readonly ConfigKind[] = ["commandButtons"] as const;
 
 /** Returns the expected configuration kind for a shared set. */
 export function configurationSetKind(set: ConfigurationSet): ConfigKind {

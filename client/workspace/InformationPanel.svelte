@@ -77,22 +77,41 @@
         cyberwareDialog?.showModal();
       },
     });
-    const render = (nextSnapshot: SessionInformationSnapshot) => {
+    // Every panel hears every information publish, but a snapshot keeps the
+    // slices it did not change by reference, so a panel whose data is the
+    // same object (or the same shallow shape) as last time has nothing to draw.
+    let lastData: unknown = renderers;
+    const render = (nextSnapshot: SessionInformationSnapshot, force = false) => {
       snapshot = nextSnapshot;
       const renderer = renderers[panelId];
-      if (renderer) renderer(body, panelData(nextSnapshot));
+      if (!renderer) return;
+      const data = panelData(nextSnapshot);
+      if (!force && sameShallow(data, lastData)) return;
+      lastData = data;
+      renderer(body, data);
     };
-    const unsubscribe = session.information.subscribe(render);
+    const unsubscribe = session.information.subscribe((nextSnapshot) => render(nextSnapshot));
     // Only the sky clock advances between frames; re-render it on a timer.
     const timer =
       panelId === "sky"
-        ? window.setInterval(() => render(session.information.getSnapshot()), 1000)
+        ? window.setInterval(() => render(session.information.getSnapshot(), true), 1000)
         : undefined;
     return () => {
       unsubscribe();
       if (timer !== undefined) window.clearInterval(timer);
     };
   });
+
+  function sameShallow(a: unknown, b: unknown): boolean {
+    if (a === b) return true;
+    if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+    if (Array.isArray(a) || Array.isArray(b)) return false;
+    const left = a as Record<string, unknown>;
+    const right = b as Record<string, unknown>;
+    const keys = Object.keys(left);
+    if (keys.length !== Object.keys(right).length) return false;
+    return keys.every((key) => left[key] === right[key]);
+  }
 
   function activeCyberwareDetail() {
     return snapshot?.cyberwareDetail?.id === activeCyberwareId ? snapshot.cyberwareDetail : null;

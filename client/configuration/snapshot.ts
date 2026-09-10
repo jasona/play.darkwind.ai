@@ -1,5 +1,6 @@
 import type {
   AliasDefinition,
+  CommandButtonDefinition,
   ConfigSourceMetadata,
   FunctionDefinition,
   HighlightDefinition,
@@ -26,6 +27,7 @@ export interface EffectiveConfigurationSnapshot {
   functions: EffectiveDefinition<FunctionDefinition>[];
   keyMappings: EffectiveDefinition<KeyMappingDefinition>[];
   timers: EffectiveDefinition<TimerDefinition>[];
+  commandButtons: EffectiveDefinition<CommandButtonDefinition>[];
 }
 
 /**
@@ -61,13 +63,25 @@ function deepFreezeLocalDefinitions(definitions: LocalDefinitions): LocalDefinit
       definitions.keyMappings.map((item) => deepFreeze(item)),
     ) as KeyMappingDefinition[],
     timers: Object.freeze(definitions.timers.map((item) => deepFreeze(item))) as TimerDefinition[],
+    commandButtons: Object.freeze(
+      definitions.commandButtons.map((item) => deepFreeze(item)),
+    ) as CommandButtonDefinition[],
   };
 }
+
+// Objects this function has already walked. Snapshots are rebuilt by spreading
+// the previous one, so most of a new snapshot is subtrees frozen on an earlier
+// publish; skipping them keeps the per-packet cost proportional to what changed.
+const deepFrozen = new WeakSet<object>();
 
 export function deepFreeze<T>(value: T): T {
   if (value === null || typeof value !== "object") {
     return value;
   }
+  if (deepFrozen.has(value)) {
+    return value;
+  }
+  deepFrozen.add(value);
 
   Object.freeze(value);
 

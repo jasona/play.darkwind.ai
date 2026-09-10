@@ -11,6 +11,7 @@ import {
 } from "./snapshot";
 import type {
   AliasDefinition,
+  CommandButtonDefinition,
   ConfigKind,
   ConfigurationSet,
   FunctionDefinition,
@@ -67,6 +68,11 @@ export function resolveEffectiveConfiguration(
       character.localDefinitions.keyMappings,
     ),
     timers: resolveTimers(state, character.configSetRefs.timers, character.localDefinitions.timers),
+    commandButtons: resolveCommandButtons(
+      state,
+      character.configSetRefs.commandButtons,
+      character.localDefinitions.commandButtons,
+    ),
   };
 
   return { success: true, data: freezeSnapshot(snapshot) };
@@ -150,6 +156,20 @@ function resolveTimers(
   return resolveKind(state, configSetRefs, localDefinitions, "timers", BUILTIN_DEFINITIONS.timers);
 }
 
+function resolveCommandButtons(
+  state: ApplicationStateV1,
+  configSetRefs: ConfigSetId[],
+  localDefinitions: CommandButtonDefinition[],
+): EffectiveDefinition<CommandButtonDefinition>[] {
+  return resolveKind(
+    state,
+    configSetRefs,
+    localDefinitions,
+    "commandButtons",
+    BUILTIN_DEFINITIONS.commandButtons,
+  );
+}
+
 function resolveKind<TDefinition>(
   state: ApplicationStateV1,
   configSetRefs: ConfigSetId[],
@@ -170,7 +190,9 @@ function resolveKind<TDefinition>(
     },
   ];
 
-  for (const configSetId of configSetRefs) {
+  // A graph handed in without validation (test fixtures, older callers) may
+  // lack the arrays for a kind added later; treat them as empty.
+  for (const configSetId of configSetRefs ?? []) {
     const configSet = state.configurationSets[configSetId] as ConfigurationSet | undefined;
     if (configSet === undefined || configSet.kind !== kind) {
       continue;
@@ -187,7 +209,7 @@ function resolveKind<TDefinition>(
   }
 
   layers.push({
-    definitions: localDefinitions,
+    definitions: localDefinitions ?? [],
     source: { kind: "local" },
   });
 

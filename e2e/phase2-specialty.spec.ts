@@ -351,7 +351,7 @@ test("Combat and Tutorial preserve fallback, exact directions, focus, and readin
       )
       .toBe(true);
 
-    await page.getByRole("button", { name: "Enemy", exact: true }).click();
+    await page.getByRole("button", { name: "Scene", exact: true }).click();
     await expect(combat).toBeVisible();
     await expect
       .poll(() =>
@@ -381,16 +381,21 @@ test("Combat and Tutorial preserve fallback, exact directions, focus, and readin
     );
     await expect(combat).toBeVisible();
 
+    // With visual combat off the Scene stays open but stops presenting the
+    // fight: the opponent leaves the stage and the room scene takes over.
     endpoint.sendGmcp(
       "Darkwind.Combat.State",
       combatState({ encounter_id: activeEncounter, seq: nextCombatSeq++, visual_enabled: 0 }),
     );
-    await expect(combat).toHaveCount(0);
+    await expect(combat).toHaveClass(/combat-scene-idle/);
+    await expect(combat.locator(".combat-token-hud-target")).toHaveCount(0);
     endpoint.sendGmcp(
       "Darkwind.Combat.State",
       combatState({ encounter_id: activeEncounter, seq: nextCombatSeq++, visual_enabled: 1 }),
     );
     await expect(combat).toBeVisible();
+    await expect(combat).not.toHaveClass(/combat-scene-idle/);
+    await expect(combat.locator(".combat-token-hud-target")).toHaveCount(1);
   }
 
   const combatCloseStart = endpoint.gmcpMessages.length;
@@ -398,10 +403,10 @@ test("Combat and Tutorial preserve fallback, exact directions, focus, and readin
     await page.getByRole("button", { name: "Panels", exact: true }).click();
     await page
       .getByRole("dialog", { name: "Panels" })
-      .getByRole("button", { name: "Close Enemy", exact: true })
+      .getByRole("button", { name: "Close Scene", exact: true })
       .click();
   } else {
-    await page.getByRole("button", { name: "Close Enemy", exact: true }).click();
+    await page.getByRole("button", { name: "Close Scene", exact: true }).click();
   }
   await expect(combat).toHaveCount(0);
   await expect
@@ -435,7 +440,10 @@ test("Combat and Tutorial preserve fallback, exact directions, focus, and readin
       summary: "Victory.",
     }),
   );
-  await expect(combat).toHaveCount(0);
+  // The Scene persists past the end of the fight; only the opponent goes.
+  await expect(combat).toHaveClass(/combat-scene-idle/);
+  await expect(combat.locator(".combat-token-hud-target")).toHaveCount(0);
+  await expect(combat.locator(".combat-outcome")).toContainText("Victory.");
   await expect(output).toContainText("Acer strikes an ash drake for 12 damage.");
 
   const tutorialStart = endpoint.gmcpMessages.length;

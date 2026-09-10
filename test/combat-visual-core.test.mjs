@@ -419,3 +419,73 @@ test('reduced-motion preference safely follows matchMedia', () => {
   assert.equal(prefersReducedCombatMotion(() => { throw new Error('unavailable'); }), false);
   assert.equal(prefersReducedCombatMotion(null), false);
 });
+
+test('player token carries Char.Status descriptors and a bundled portrait fallback', () => {
+  const model = reduceCombatState(createCombatVisualState(), activeState());
+  const view = buildCombatView(model, {
+    vitals: { hp: 50, maxhp: 100 },
+    avatar: { url: '', name: 'Acer' },
+    status: { race: 'High Elf', class: 'Mage', gender: 'Female' },
+  });
+  assert.equal(view.player.race, 'High Elf');
+  assert.equal(view.player.guild, 'Mage');
+  assert.equal(view.player.gender, 'Female');
+  assert.equal(view.player.descriptor, 'Female High Elf \u00b7 Mage');
+  assert.equal(view.player.fallbackImage, '/assets/avatars/female-high-elf.png');
+  assert.equal(view.player.image, '', 'no avatar URL means the bundled portrait is only a fallback');
+
+  const partial = buildCombatView(model, { status: { race: 'Dragon' } });
+  assert.equal(partial.player.descriptor, 'Dragon');
+  assert.equal(partial.player.fallbackImage, '', 'a race without a gender has no bundled file');
+
+  const unknown = buildCombatView(model, { status: { race: 'Thing\u0007', gender: 'male', guild: 'Fighter' } });
+  assert.equal(unknown.player.descriptor, 'male Thing \u00b7 Fighter', 'control characters are stripped');
+  assert.equal(unknown.player.fallbackImage, '');
+
+  const none = buildCombatView(model, {});
+  assert.equal(none.player.descriptor, '');
+  assert.equal(none.player.fallbackImage, '');
+});
+
+test('observed combat never borrows the recipient status for the staged fighter', () => {
+  const model = reduceCombatState(createCombatVisualState(), activeState({
+    current_actor_id: 'ally-1',
+    current_target_id: 'enemy-1',
+    actors: [
+      { id: 'self', name: 'Acer', role: 'self' },
+      { id: 'ally-1', name: 'Bryn', role: 'ally' },
+      { id: 'enemy-1', name: 'an ash drake', role: 'target' },
+    ],
+  }));
+  const view = buildCombatView(model, {
+    status: { race: 'High Elf', class: 'Mage', gender: 'Female' },
+  });
+  assert.equal(view.player.name, 'Bryn');
+  assert.equal(view.player.descriptor, '');
+  assert.equal(view.player.fallbackImage, '');
+});
+
+test('inventory shapes the player equipment and observers never inherit it', () => {
+  const model = reduceCombatState(createCombatVisualState(), activeState());
+  const items = [
+    { id: 's', name: 'a steel sword (main weapon)', attrib: 'l' },
+    { id: 'b', name: 'a buckler (used as shield)', attrib: 'w' },
+  ];
+  const view = buildCombatView(model, { inventory: items });
+  assert.equal(view.player.equipment.mainHand.kind, 'blade');
+  assert.equal(view.player.equipment.shield, true);
+  assert.equal(view.target.equipment, undefined);
+
+  const none = buildCombatView(model, {});
+  assert.equal(none.player.equipment, null, 'no inventory received yet');
+
+  const observed = reduceCombatState(createCombatVisualState(), activeState({
+    current_actor_id: 'ally-1',
+    actors: [
+      { id: 'self', name: 'Acer', role: 'self' },
+      { id: 'ally-1', name: 'Bryn', role: 'ally' },
+      { id: 'enemy-1', name: 'an ash drake', role: 'target' },
+    ],
+  }));
+  assert.equal(buildCombatView(observed, { inventory: items }).player.equipment, null);
+});

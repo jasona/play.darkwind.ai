@@ -1016,3 +1016,276 @@
     animation: none !important;
   }
 }
+
+/* Canvas stage. The tokens, backdrop, and effects live on a canvas drawn by
+   combat-stage.mjs; names and health stay in the DOM overlay so progressbar
+   semantics and the live region are unchanged. Selectors carry the
+   .combat-visual-canvas scope so they outrank the DOM-stage rules above at
+   every container width. */
+[data-panel-id="enemy"] .combat-visual-canvas .combat-stage {
+  position: relative;
+  display: block;
+  flex: 1 1 auto;
+  min-height: 190px;
+  padding: 0;
+  overflow: hidden;
+  background: #05090e;
+}
+
+[data-panel-id="enemy"] .combat-visual-canvas .combat-stage::before,
+[data-panel-id="enemy"] .combat-visual-canvas .combat-stage::after {
+  content: none;
+}
+
+[data-panel-id="enemy"] .combat-stage-canvas-wrap {
+  position: absolute;
+  inset: 0;
+}
+
+[data-panel-id="enemy"] .combat-stage-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+[data-panel-id="enemy"] .combat-stage-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  pointer-events: none;
+}
+
+[data-panel-id="enemy"] .combat-token-hud {
+  display: flex;
+  flex: 0 1 44%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+[data-panel-id="enemy"] .combat-token-hud-target {
+  align-items: flex-end;
+  text-align: right;
+}
+
+[data-panel-id="enemy"] .combat-hud-name {
+  position: relative;
+  max-width: 100%;
+  padding-bottom: 5px;
+  color: var(--df-text);
+  font-size: calc(13px * var(--pane-font-scale, 1));
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 2px #000, 0 0 8px rgba(0, 0, 0, 0.8);
+}
+
+[data-panel-id="enemy"] .combat-hud-name span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-panel-id="enemy"] .combat-hud-descriptor,
+[data-panel-id="enemy"] .combat-descriptor {
+  overflow: hidden;
+  color: var(--df-muted);
+  font-size: calc(9px * var(--pane-font-scale, 1));
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px #000;
+}
+
+[data-panel-id="enemy"] .combat-hud-name::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--combat-cyan), transparent);
+  box-shadow: 0 0 6px rgba(66, 214, 201, 0.5);
+}
+
+[data-panel-id="enemy"] .combat-token-hud-target .combat-hud-name::after {
+  background: linear-gradient(270deg, var(--combat-red), transparent);
+  box-shadow: 0 0 6px rgba(248, 81, 73, 0.5);
+}
+
+[data-panel-id="enemy"] .combat-visual-canvas .combat-health {
+  position: static;
+  width: 100%;
+  min-width: 0;
+}
+
+[data-panel-id="enemy"] .combat-visual-canvas .combat-health-track {
+  height: 18px;
+  padding: 2px;
+  border: 1px solid rgba(133, 149, 161, 0.4);
+  border-radius: 0;
+  clip-path: polygon(3% 0, 97% 0, 100% 50%, 97% 100%, 3% 100%, 0 50%);
+  background: rgba(3, 7, 11, 0.9);
+  box-shadow: inset 0 1px 6px rgba(0, 0, 0, 0.8);
+}
+
+[data-panel-id="enemy"] .combat-visual-canvas .combat-health-percent {
+  font-size: calc(10px * var(--pane-font-scale, 1));
+  line-height: 14px;
+}
+
+[data-panel-id="enemy"] .combat-visual-canvas .combat-health-values {
+  font-size: calc(9px * var(--pane-font-scale, 1));
+  text-shadow: 0 1px 2px #000;
+}
+
+[data-panel-id="enemy"] .combat-visual-canvas .combat-token-hud-target .combat-health-values {
+  justify-content: flex-end;
+}
+
+[data-panel-id="enemy"] .combat-visual-canvas .combat-target-condition {
+  position: static;
+  display: block;
+  max-width: 100%;
+  color: var(--df-muted);
+  font-size: calc(9px * var(--pane-font-scale, 1));
+  text-shadow: 0 1px 2px #000;
+}
+
+[data-panel-id="enemy"] .combat-hud {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+
+@container (min-width: 720px) {
+  [data-panel-id="enemy"] .combat-visual-canvas .combat-stage {
+    min-height: 0;
+  }
+
+  [data-panel-id="enemy"] .combat-stage-overlay {
+    padding: 16px 24px;
+  }
+
+  [data-panel-id="enemy"] .combat-token-hud {
+    flex-basis: 34%;
+  }
+
+  [data-panel-id="enemy"] .combat-hud-name {
+    font-size: calc(20px * var(--pane-font-scale, 1));
+  }
+
+  [data-panel-id="enemy"] .combat-hud-descriptor {
+    font-size: calc(12px * var(--pane-font-scale, 1));
+  }
+
+  [data-panel-id="enemy"] .combat-visual-canvas .combat-health-track {
+    height: 28px;
+    padding: 3px;
+    border-width: 2px;
+  }
+
+  [data-panel-id="enemy"] .combat-visual-canvas .combat-health-percent {
+    font-size: calc(16px * var(--pane-font-scale, 1));
+    line-height: 22px;
+  }
+
+  [data-panel-id="enemy"] .combat-visual-canvas .combat-health-values {
+    font-size: calc(12px * var(--pane-font-scale, 1));
+  }
+
+  [data-panel-id="enemy"] .combat-visual-canvas .combat-target-condition {
+    font-size: calc(11px * var(--pane-font-scale, 1));
+  }
+}
+
+@container (max-width: 430px) {
+  [data-panel-id="enemy"] .combat-visual-canvas .combat-stage {
+    min-height: 150px;
+  }
+
+  [data-panel-id="enemy"] .combat-stage-overlay {
+    padding: 6px 8px;
+  }
+
+  [data-panel-id="enemy"] .combat-hud-name {
+    font-size: calc(10px * var(--pane-font-scale, 1));
+    letter-spacing: 0.04em;
+  }
+
+  [data-panel-id="enemy"] .combat-visual-canvas .combat-health-track {
+    height: 14px;
+  }
+
+  [data-panel-id="enemy"] .combat-visual-canvas .combat-health-percent {
+    font-size: calc(8px * var(--pane-font-scale, 1));
+    line-height: 10px;
+  }
+
+  [data-panel-id="enemy"] .combat-visual-canvas .combat-target-condition {
+    display: none;
+  }
+}
+
+/* Phase 2 Combat panel (CombatPanel.svelte). The rules above size the stage
+   with flex: 1 1 auto and, from 720px of container width, drop its minimum
+   height, which assumed the legacy panel body: a flex column of definite
+   height. The Dockview panel is a block of automatic height, so without a
+   column to grow in the stage collapsed to nothing at wide widths. Make the
+   panel fill its container as a column and let the stage take the room. */
+.combat-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.combat-panel > div {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.combat-panel .combat-visual {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Between fights the panel is a scene: the player alone in the room. The
+   opponent's HUD is not rendered then, and the room's name takes the place
+   of the exchange line. */
+[data-panel-id="enemy"] .combat-scene-room {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--df-border);
+  border-bottom: 1px solid var(--df-border);
+  background: rgba(8, 13, 20, 0.78);
+  color: var(--df-text);
+  font-size: calc(12px * var(--pane-font-scale, 1));
+}
+
+[data-panel-id="enemy"] .combat-scene-room-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

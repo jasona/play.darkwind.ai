@@ -1,6 +1,6 @@
 import { deepFreeze } from "../configuration/snapshot";
 import type { SessionGmcpBus } from "../gmcp/bus";
-import type { CharEnemy, CharVitals } from "../gmcp/contracts/char";
+import type { CharEnemy, CharItem, CharStatus, CharVitals } from "../gmcp/contracts/char";
 import type {
   DarkwindCombatActor,
   DarkwindCombatEvent,
@@ -69,6 +69,10 @@ export interface SessionCombatSnapshot {
   readonly enemy: Readonly<CharEnemy> | null;
   readonly vitals: Readonly<CharVitals> | null;
   readonly avatar: Readonly<DarkwindAvatar> | null;
+  /** Recipient-only Char.Status, for the stage's player descriptor and portrait fallback. */
+  readonly status: Readonly<CharStatus> | null;
+  /** Recipient-only Char.Items inventory, for the stage's wielded and worn equipment. */
+  readonly inventory: readonly CharItem[];
   readonly presentationGeneration: number;
   readonly manuallyDismissedEncounter: string;
 }
@@ -129,6 +133,8 @@ export function createSessionCombat(
       enemy,
       vitals: informationSnapshot.vitals,
       avatar: informationSnapshot.avatar,
+      status: informationSnapshot.status,
+      inventory: informationSnapshot.inventory,
       presentationGeneration,
       manuallyDismissedEncounter,
     });
@@ -291,7 +297,13 @@ export function createSessionCombat(
     advertisedReady = false;
     model = createCombatVisualState({ reducedMotion: model.reducedMotion }) as SessionCombatModel;
     enemy = null;
-    informationSnapshot = { ...informationSnapshot, vitals: null, avatar: null };
+    informationSnapshot = {
+      ...informationSnapshot,
+      vitals: null,
+      avatar: null,
+      status: null,
+      inventory: [],
+    };
     manuallyDismissedEncounter = "";
     presentationGeneration += 1;
     disposed = true;
